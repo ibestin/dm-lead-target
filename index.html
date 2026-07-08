@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Incheon Connect — Zone/Dealership Lead Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.min.js"></script>
+<style>
+  :root{
+    --teal-900:#0f4c5c;
+    --teal-700:#146c85;
+    --teal-500:#1c8aa8;
+    --ink:#1a2b30;
+    --paper:#f6f8f8;
+    --card:#ffffff;
+    --line:#dfe7e8;
+    --green-dark:#4c9a2a;
+    --green:#7fb547;
+    --green-light:#c9e0a0;
+    --amber:#e8c547;
+    --red:#d4614a;
+    --muted:#6b8085;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; padding:24px; background:var(--paper); color:var(--ink);
+    font-family:"Segoe UI", Roboto, Arial, sans-serif;
+    font-variant-numeric:tabular-nums;
+  }
+  h1{font-size:19px; letter-spacing:.02em; margin:0 0 4px 0; color:var(--teal-900);}
+  .sub{color:var(--muted); font-size:12.5px; margin-bottom:18px;}
+  .card{
+    background:var(--card); border:1px solid var(--line); border-radius:6px;
+    padding:16px 18px; margin-bottom:18px;
+  }
+  .card h2{
+    font-size:13px; text-transform:uppercase; letter-spacing:.06em;
+    color:var(--teal-700); margin:0 0 12px 0; font-weight:700;
+  }
+  .row{display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end;}
+  .field{display:flex; flex-direction:column; gap:4px; font-size:12.5px;}
+  .field label{color:var(--muted); font-size:11.5px;}
+  .field input[type=file]{font-size:12px;}
+  .field input[type=number]{
+    width:90px; padding:6px 8px; border:1px solid var(--line); border-radius:4px; font-size:13px;
+  }
+  button{
+    background:var(--teal-700); color:#fff; border:none; border-radius:4px;
+    padding:8px 16px; font-size:12.5px; cursor:pointer; font-weight:600;
+  }
+  button:hover{background:var(--teal-900);}
+  button.secondary{background:#fff; color:var(--teal-700); border:1px solid var(--teal-700);}
+  button.secondary:hover{background:#eef6f7;}
+  .status{font-size:12px; margin-top:8px; color:var(--muted);}
+  .status.ok{color:var(--green-dark);}
+  .status.err{color:var(--red);}
+
+  table{border-collapse:collapse; width:auto; font-size:12.5px;}
+  th, td{border:1px solid var(--line); padding:5px 10px; text-align:center; white-space:nowrap;}
+  th{background:var(--teal-700); color:#fff; font-weight:600; font-size:11.5px; text-transform:uppercase; letter-spacing:.02em;}
+  td.dealer{text-align:left; font-weight:500;}
+  tr.zone td{background:#eaf3f4; color:var(--teal-900); font-weight:700;}
+  tr.zone td:first-child{text-align:left;}
+  tr.total td:first-child{text-align:left;}
+  tr.total td{background:var(--teal-900); color:#fff; font-weight:700;}
+  .grp-enq{background:#f0f8f4;}
+  .grp-book{background:#fff6ec;}
+  th.grp-enq{background:#3c8b64; }
+  th.grp-book{background:#c07f2e;}
+  .pace-hi{background:#c9e0a0;}
+  .pace-ok{background:#e5edc8;}
+  .pace-mid{background:#f6e6a8;}
+  .pace-low{background:#f0b8ac;}
+  .target-input{
+    width:60px; padding:3px 4px; border:1px solid var(--line); border-radius:3px;
+    font-size:12px; text-align:center;
+  }
+  .scroll-x{overflow-x:auto;}
+  .chart-controls{display:flex; gap:10px; align-items:center; margin-bottom:12px; flex-wrap:wrap;}
+  select{padding:6px 8px; border:1px solid var(--line); border-radius:4px; font-size:12.5px;}
+  .toggle-group{display:flex; border:1px solid var(--teal-700); border-radius:4px; overflow:hidden;}
+  .toggle-group button{background:#fff; color:var(--teal-700); border-radius:0; padding:6px 14px;}
+  .toggle-group button.active{background:var(--teal-700); color:#fff;}
+  .note{font-size:11.5px; color:var(--muted); margin-top:10px; line-height:1.5;}
+  canvas{max-height:360px;}
+  .chart-grid{display:grid; grid-template-columns:1fr 1fr; gap:22px;}
+  .chart-title{font-size:12px; font-weight:700; color:var(--teal-700); margin-bottom:8px; text-transform:uppercase; letter-spacing:.05em;}
+  @media (max-width: 720px){ .chart-grid{grid-template-columns:1fr;} }
+  .gap-pos{color:var(--green-dark); font-weight:600;}
+  .gap-neg{color:var(--red); font-weight:600;}
+</style>
+</head>
+<body>
+
+<h1>ZONE / DEALERSHIP LEAD DASHBOARD</h1>
+<div class="sub" id="dateLine">Loading current date…</div>
+
+<div class="card">
+  <h2>1 · Upload Month-to-Date Files</h2>
+  <div class="row">
+    <div class="field">
+      <label>RECEIVED database (.xlsx)</label>
+      <input type="file" id="fileReceived" accept=".xlsx,.xls">
+    </div>
+    <div class="field">
+      <label>SHARED (qualified) database (.xlsx)</label>
+      <input type="file" id="fileShared" accept=".xlsx,.xls">
+    </div>
+    <div class="field">
+      <label>BOOKED database (.xlsx)</label>
+      <input type="file" id="fileBooked" accept=".xlsx,.xls">
+    </div>
+    <button id="processBtn">Process Files</button>
+  </div>
+  <div class="status" id="processStatus"></div>
+</div>
+
+<div class="card">
+  <h2>2 · Month Settings &amp; Targets</h2>
+  <div class="row">
+    <div class="field">
+      <label>Sundays this month (auto)</label>
+      <input type="number" id="sundaysAuto" disabled class="target-input">
+    </div>
+    <div class="field">
+      <label>Holidays this month (excl. Sundays)</label>
+      <input type="number" id="holidaysTotal" min="0" class="target-input" value="0">
+    </div>
+    <div class="field">
+      <label>Holidays so far (excl. Sundays)</label>
+      <input type="number" id="holidaysSoFar" min="0" class="target-input" value="0">
+    </div>
+    <div class="field">
+      <label>Working days in month (auto)</label>
+      <input type="number" id="workingDaysAuto" disabled class="target-input">
+    </div>
+    <div class="field">
+      <label>Working days elapsed (auto)</label>
+      <input type="number" id="workingDaysElapsedAuto" disabled class="target-input">
+    </div>
+    <button id="saveSettingsBtn">Save Settings</button>
+  </div>
+
+  <div class="scroll-x" style="margin-top:14px;">
+    <table id="targetTable">
+      <thead>
+        <tr><th style="text-align:left;">Dealership</th><th>Enquiry Target</th><th>Booking Target</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <div class="row" style="margin-top:12px;">
+    <button id="saveTargetsBtn">Save Targets</button>
+    <span class="status" id="targetStatus"></span>
+  </div>
+</div>
+
+<div class="card">
+  <h2>3 · Dashboard</h2>
+  <div class="scroll-x">
+    <table id="mainTable"></table>
+  </div>
+  <div class="note">
+    Pace % = Actual-to-date ÷ Expected-to-date (Expected-to-date = Daily Target × Working Days Elapsed). Daily Target = Monthly Target ÷ Working Days in Month, rounded up to the next whole number. Gap = Actual-to-date − Expected-to-date (green = ahead of pace, red = behind pace).
+    Channel filter includes: Call Center, CarWale, CarDekho, StartDeal, Meta 01, Meta 02, Hyperlocal, SNS (enquiry) and the same set plus DM (booking) — matched exactly as in the source COUNTIFS formulas.
+  </div>
+</div>
+
+<div class="card">
+  <h2>4 · Worm Graph — Target vs Actual Pace</h2>
+  <div class="chart-controls">
+    <label style="font-size:12.5px; color:var(--muted);">Scope:</label>
+    <select id="scopeSelect"></select>
+  </div>
+  <div class="chart-grid">
+    <div>
+      <div class="chart-title">Enquiry</div>
+      <canvas id="enquiryCanvas" height="140"></canvas>
+    </div>
+    <div>
+      <div class="chart-title">Booking</div>
+      <canvas id="bookingCanvas" height="140"></canvas>
+    </div>
+  </div>
+  <div class="note">
+    Target line assumes an even daily pace across working days (Sundays excluded automatically; the holiday count you enter is applied as a flat reduction to the overall working-day total, not to specific calendar dates, so the target line is a close approximation rather than an exact calendar match). Both charts share the scope filter above.
+  </div>
+</div>
+
+<script>
+// ---------------- Zone / Dealership structure ----------------
+const ZONES = [
+  { zone: "ZONE 1", dealers: ["KL404 - Thiruvananthapuram", "KL405 - Kollam"] },
+  { zone: "ZONE 2", dealers: ["KL101 - Kodimatha", "KL304 - Thellakom", "KL509 - Thodupuzha", "KL511 - Kanjirappally"] },
+  { zone: "ZONE 3", dealers: ["INC02 - Thiruvalla", "KL309 - Kayamkulam", "KL510 - Alappuzha"] },
+  { zone: "ZONE 4", dealers: ["KL102 - Edappally", "KL302 - Desom", "KL310 - Nettoor", "KL313 - Muvattupuzha"] },
+  { zone: "ZONE 5", dealers: ["KL103 - Sakthan Nagar", "KL308 - Thrissur", "KL312 - Vadanappally"] },
+  { zone: "ZONE 6", dealers: ["KL311 - Palakkad"] },
+];
+const ALL_DEALERS = ZONES.flatMap(z => z.dealers);
+
+const ENQUIRY_CHANNELS = ["Call Center","CarWale","CarDekho","StartDeal","Meta 02","Hyperlocal","Meta 01","SNS"];
+const BOOKED_CHANNELS  = ["Call Center","CarWale","CarDekho","StartDeal","DM","Hyperlocal","Meta 01","Meta 02","SNS"];
+
+// Hardcoded monthly targets (enquiry = qualified enquiry target, booking = booking target)
+const DEFAULT_TARGETS = {
+  "KL404 - Thiruvananthapuram": { enquiryTarget: 1600, bookingTarget: 70 },
+  "KL405 - Kollam":             { enquiryTarget: 1100, bookingTarget: 63 },
+  "KL101 - Kodimatha":          { enquiryTarget: 400,  bookingTarget: 32 },
+  "KL304 - Thellakom":          { enquiryTarget: 300,  bookingTarget: 28 },
+  "KL509 - Thodupuzha":         { enquiryTarget: 450,  bookingTarget: 30 },
+  "KL511 - Kanjirappally":      { enquiryTarget: 400,  bookingTarget: 26 },
+  "INC02 - Thiruvalla":         { enquiryTarget: 500,  bookingTarget: 31 },
+  "KL309 - Kayamkulam":         { enquiryTarget: 400,  bookingTarget: 32 },
+  "KL510 - Alappuzha":          { enquiryTarget: 400,  bookingTarget: 29 },
+  "KL102 - Edappally":          { enquiryTarget: 1000, bookingTarget: 70 },
+  "KL302 - Desom":              { enquiryTarget: 650,  bookingTarget: 40 },
+  "KL310 - Nettoor":            { enquiryTarget: 650,  bookingTarget: 45 },
+  "KL313 - Muvattupuzha":       { enquiryTarget: 650,  bookingTarget: 35 },
+  "KL103 - Sakthan Nagar":      { enquiryTarget: 300,  bookingTarget: 25 },
+  "KL308 - Thrissur":           { enquiryTarget: 600,  bookingTarget: 35 },
+  "KL312 - Vadanappally":       { enquiryTarget: 500,  bookingTarget: 34 },
+  "KL311 - Palakkad":           { enquiryTarget: 1100, bookingTarget: 75 },
+};
+
+// ---------------- State ----------------
+let today = new Date();
+let YEAR = today.getFullYear();
+let MONTH = today.getMonth() + 1; // 1-indexed
+let DAY = today.getDate();
+let totalDaysInMonth = new Date(YEAR, MONTH, 0).getDate();
+
+let targets = {}; // { dealer: {enquiryTarget, bookingTarget} }
+let holidaySettings = { totalHolidays: 0, holidaysSoFar: 0 };
+
+// dailyData[dealer][day] = {received:0, qualified:0, booked:0}
+let dailyData = {};
+ALL_DEALERS.forEach(d => {
+  dailyData[d] = {};
+  for (let day = 1; day <= totalDaysInMonth; day++) dailyData[d][day] = { received:0, qualified:0, booked:0 };
+});
+
+let dataLoaded = false;
+
+// ---------------- Init ----------------
+document.getElementById('dateLine').textContent =
+  `As on ${today.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' })} — Day ${DAY} of ${totalDaysInMonth}`;
+
+function countSundaysUpTo(day){
+  let c = 0;
+  for (let d = 1; d <= day; d++){
+    if (new Date(YEAR, MONTH-1, d).getDay() === 0) c++;
+  }
+  return c;
+}
+const sundaysTotal = countSundaysUpTo(totalDaysInMonth);
+const sundaysElapsed = countSundaysUpTo(DAY);
+document.getElementById('sundaysAuto').value = sundaysTotal;
+
+function recalcWorkingDays(){
+  const holTotal = parseInt(document.getElementById('holidaysTotal').value) || 0;
+  const holSoFar = parseInt(document.getElementById('holidaysSoFar').value) || 0;
+  holidaySettings = { totalHolidays: holTotal, holidaysSoFar: holSoFar };
+  const workingDaysTotal = Math.max(totalDaysInMonth - sundaysTotal - holTotal, 1);
+  const workingDaysElapsed = Math.max(DAY - sundaysElapsed - holSoFar, 0);
+  document.getElementById('workingDaysAuto').value = workingDaysTotal;
+  document.getElementById('workingDaysElapsedAuto').value = workingDaysElapsed;
+  return { workingDaysTotal, workingDaysElapsed };
+}
+
+// cumulative non-Sunday day count array (used for target-line approximation)
+const cumNonSunday = new Array(totalDaysInMonth + 1).fill(0);
+(function(){
+  let c = 0;
+  for (let d = 1; d <= totalDaysInMonth; d++){
+    if (new Date(YEAR, MONTH-1, d).getDay() !== 0) c++;
+    cumNonSunday[d] = c;
+  }
+})();
+
+// ---------------- Persistent storage ----------------
+async function loadSettings(){
+  try{
+    const r = await window.storage.get('holiday-settings');
+    if (r && r.value){
+      const v = JSON.parse(r.value);
+      document.getElementById('holidaysTotal').value = v.totalHolidays ?? 0;
+      document.getElementById('holidaysSoFar').value = v.holidaysSoFar ?? 0;
+    }
+  } catch(e){ /* no saved settings yet */ }
+  try{
+    const r = await window.storage.get('dealership-targets');
+    if (r && r.value) targets = JSON.parse(r.value);
+  } catch(e){ targets = {}; }
+  ALL_DEALERS.forEach(d => {
+    if (!targets[d]) targets[d] = DEFAULT_TARGETS[d] ? { ...DEFAULT_TARGETS[d] } : { enquiryTarget: 0, bookingTarget: 0 };
+  });
+  recalcWorkingDays();
+  buildTargetTable();
+  renderMainTable();
+}
+
+async function saveSettings(){
+  const { workingDaysTotal, workingDaysElapsed } = recalcWorkingDays();
+  try{
+    await window.storage.set('holiday-settings', JSON.stringify(holidaySettings));
+    document.getElementById('processStatus').textContent = 'Settings saved.';
+  } catch(e){
+    document.getElementById('processStatus').textContent = 'Could not save settings.';
+  }
+  renderMainTable();
+  updateCharts();
+}
+
+async function saveTargets(){
+  ALL_DEALERS.forEach(d => {
+    const enqEl = document.getElementById('enq-target-' + safe(d));
+    const bookEl = document.getElementById('book-target-' + safe(d));
+    targets[d] = {
+      enquiryTarget: parseInt(enqEl.value) || 0,
+      bookingTarget: parseInt(bookEl.value) || 0,
+    };
+  });
+  try{
+    await window.storage.set('dealership-targets', JSON.stringify(targets));
+    document.getElementById('targetStatus').textContent = 'Targets saved.';
+    document.getElementById('targetStatus').className = 'status ok';
+  } catch(e){
+    document.getElementById('targetStatus').textContent = 'Could not save targets.';
+    document.getElementById('targetStatus').className = 'status err';
+  }
+  renderMainTable();
+  updateCharts();
+}
+
+function safe(s){ return s.replace(/[^a-zA-Z0-9]/g, '_'); }
+
+function buildTargetTable(){
+  const tbody = document.querySelector('#targetTable tbody');
+  tbody.innerHTML = '';
+  ZONES.forEach(z => {
+    z.dealers.forEach(d => {
+      const t = targets[d] || { enquiryTarget:0, bookingTarget:0 };
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="dealer">${d}</td>
+        <td><input type="number" class="target-input" id="enq-target-${safe(d)}" value="${t.enquiryTarget}"></td>
+        <td><input type="number" class="target-input" id="book-target-${safe(d)}" value="${t.bookingTarget}"></td>`;
+      tbody.appendChild(tr);
+    });
+  });
+}
+
+// ---------------- File parsing ----------------
+function parseDateCell(v){
+  if (v instanceof Date) return v;
+  if (typeof v === 'number'){
+    return new Date(Math.round((v - 25569) * 86400 * 1000));
+  }
+  if (typeof v === 'string'){
+    const parts = v.trim().split(/[\/\-]/);
+    if (parts.length === 3){
+      const d = parseInt(parts[0]), m = parseInt(parts[1]), y = parseInt(parts[2]);
+      if (!isNaN(d) && !isNaN(m) && !isNaN(y)) return new Date(y, m-1, d);
+    }
+  }
+  return null;
+}
+
+function readWorkbook(file){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try{
+        const wb = XLSX.read(new Uint8Array(e.target.result), { type:'array', cellDates:true });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { defval:null });
+        resolve(rows);
+      } catch(err){ reject(err); }
+    };
+    reader.onerror = reject;
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function pickDateCol(row, candidates){
+  for (const c of candidates){
+    if (Object.prototype.hasOwnProperty.call(row, c)) return c;
+  }
+  return null;
+}
+
+async function processFiles(){
+  const statusEl = document.getElementById('processStatus');
+  const fReceived = document.getElementById('fileReceived').files[0];
+  const fShared = document.getElementById('fileShared').files[0];
+  const fBooked = document.getElementById('fileBooked').files[0];
+  if (!fReceived && !fShared && !fBooked){
+    statusEl.textContent = 'Please choose at least one file.';
+    statusEl.className = 'status err';
+    return;
+  }
+  statusEl.textContent = 'Processing…';
+  statusEl.className = 'status';
+
+  // reset daily data
+  ALL_DEALERS.forEach(d => {
+    for (let day = 1; day <= totalDaysInMonth; day++) dailyData[d][day] = { received:0, qualified:0, booked:0 };
+  });
+
+  try{
+    if (fReceived){
+      const rows = await readWorkbook(fReceived);
+      const dateCol = rows.length ? pickDateCol(rows[0], ["Incheon Lead: Created Date","TL Assigned Date"]) : null;
+      rows.forEach(r => {
+        const dealer = r['Dealership'];
+        const source = r['Lead Source'];
+        if (!dealer || !ALL_DEALERS.includes(dealer)) return;
+        if (!ENQUIRY_CHANNELS.includes(source)) return;
+        const dt = dateCol ? parseDateCell(r[dateCol]) : null;
+        if (!dt || dt.getMonth()+1 !== MONTH || dt.getFullYear() !== YEAR) return;
+        const day = dt.getDate();
+        if (dailyData[dealer][day]) dailyData[dealer][day].received++;
+      });
+    }
+    if (fShared){
+      const rows = await readWorkbook(fShared);
+      const dateCol = rows.length ? pickDateCol(rows[0], ["TL Assigned Date","Incheon Lead: Created Date"]) : null;
+      rows.forEach(r => {
+        const dealer = r['Dealership'];
+        const source = r['Lead Source'];
+        if (!dealer || !ALL_DEALERS.includes(dealer)) return;
+        if (!ENQUIRY_CHANNELS.includes(source)) return;
+        const dt = dateCol ? parseDateCell(r[dateCol]) : null;
+        if (!dt || dt.getMonth()+1 !== MONTH || dt.getFullYear() !== YEAR) return;
+        const day = dt.getDate();
+        if (dailyData[dealer][day]) dailyData[dealer][day].qualified++;
+      });
+    }
+    if (fBooked){
+      const rows = await readWorkbook(fBooked);
+      const dateCol = rows.length ? pickDateCol(rows[0], ["Booked Date"]) : null;
+      rows.forEach(r => {
+        const dealer = r['Dealership'];
+        const source = r['Lead Source'];
+        if (!dealer || !ALL_DEALERS.includes(dealer)) return;
+        if (!BOOKED_CHANNELS.includes(source)) return;
+        const dt = dateCol ? parseDateCell(r[dateCol]) : null;
+        if (!dt || dt.getMonth()+1 !== MONTH || dt.getFullYear() !== YEAR) return;
+        const day = dt.getDate();
+        if (dailyData[dealer][day]) dailyData[dealer][day].booked++;
+      });
+    }
+    dataLoaded = true;
+    renderMainTable();
+    try{
+      populateScopeSelect();
+      updateCharts();
+      statusEl.textContent = 'Files processed successfully.';
+      statusEl.className = 'status ok';
+    } catch(chartErr){
+      statusEl.textContent = 'Files processed, but the worm graph could not load (' + chartErr.message + '). Table above is unaffected.';
+      statusEl.className = 'status err';
+    }
+  } catch(err){
+    statusEl.textContent = 'Error reading file(s): ' + err.message;
+    statusEl.className = 'status err';
+  }
+}
+
+// ---------------- Aggregation helpers ----------------
+function totalsFor(dealer){
+  let received=0, qualified=0, booked=0;
+  for (let day = 1; day <= totalDaysInMonth; day++){
+    const d = dailyData[dealer][day];
+    received += d.received; qualified += d.qualified; booked += d.booked;
+  }
+  return { received, qualified, booked };
+}
+function toDateFor(dealer, uptoDay){
+  let qualified=0, booked=0, received=0;
+  for (let day = 1; day <= uptoDay; day++){
+    const d = dailyData[dealer][day];
+    received += d.received; qualified += d.qualified; booked += d.booked;
+  }
+  return { received, qualified, booked };
+}
+
+function paceClass(pct){
+  if (pct === null) return '';
+  if (pct >= 110) return 'pace-hi';
+  if (pct >= 100) return 'pace-ok';
+  if (pct >= 80) return 'pace-mid';
+  return 'pace-low';
+}
+
+function fmtGap(v){
+  if (v === null) return '-';
+  const r = Math.round(v);
+  const cls = r >= 0 ? 'gap-pos' : 'gap-neg';
+  const sign = r > 0 ? '+' : '';
+  return `<span class="${cls}">${sign}${r}</span>`;
+}
+
+// ---------------- Main table render ----------------
+function renderMainTable(){
+  const { workingDaysTotal, workingDaysElapsed } = recalcWorkingDays();
+  const table = document.getElementById('mainTable');
+  let html = `<thead>
+    <tr>
+      <th rowspan="2" style="text-align:left;">Dealership</th>
+      <th colspan="8" class="grp-enq">Enquiry</th>
+      <th colspan="6" class="grp-book">Booking</th>
+    </tr>
+    <tr>
+      <th class="grp-enq">Received</th><th class="grp-enq">Qualified</th><th class="grp-enq">Target</th>
+      <th class="grp-enq">Achvd %</th><th class="grp-enq">Shared Today</th><th class="grp-enq">Daily Tgt</th>
+      <th class="grp-enq">Gap</th><th class="grp-enq">Pace %</th>
+      <th class="grp-book">Booked</th><th class="grp-book">Target</th><th class="grp-book">Achvd %</th>
+      <th class="grp-book">Daily Tgt</th><th class="grp-book">Gap</th><th class="grp-book">Pace %</th>
+    </tr>
+  </thead><tbody>`;
+
+  const grand = { received:0, qualified:0, booked:0, enqTarget:0, bookTarget:0, enqToDate:0, bookToDate:0, enqDailyTgt:0, bookDailyTgt:0, sharedToday:0 };
+
+  ZONES.forEach(z => {
+    const zoneAgg = { received:0, qualified:0, booked:0, enqTarget:0, bookTarget:0, enqToDate:0, bookToDate:0, enqDailyTgt:0, bookDailyTgt:0, sharedToday:0 };
+    let rows = '';
+    z.dealers.forEach(dealer => {
+      const t = totalsFor(dealer);
+      const toDate = toDateFor(dealer, DAY);
+      const tg = targets[dealer] || { enquiryTarget:0, bookingTarget:0 };
+      const dailyEnqTgt = Math.ceil(tg.enquiryTarget / workingDaysTotal);
+      const dailyBookTgt = Math.ceil(tg.bookingTarget / workingDaysTotal);
+      const expEnq = dailyEnqTgt * workingDaysElapsed;
+      const expBook = dailyBookTgt * workingDaysElapsed;
+      const enqAchvd = tg.enquiryTarget ? (t.qualified / tg.enquiryTarget * 100) : null;
+      const bookAchvd = tg.bookingTarget ? (t.booked / tg.bookingTarget * 100) : null;
+      const enqPace = expEnq > 0 ? (toDate.qualified / expEnq * 100) : null;
+      const bookPace = expBook > 0 ? (toDate.booked / expBook * 100) : null;
+      const enqGap = tg.enquiryTarget ? (toDate.qualified - expEnq) : null;
+      const bookGap = tg.bookingTarget ? (toDate.booked - expBook) : null;
+      const sharedToday = dailyData[dealer][DAY] ? dailyData[dealer][DAY].qualified : 0;
+
+      zoneAgg.received += t.received; zoneAgg.qualified += t.qualified; zoneAgg.booked += t.booked;
+      zoneAgg.enqTarget += tg.enquiryTarget; zoneAgg.bookTarget += tg.bookingTarget;
+      zoneAgg.enqToDate += toDate.qualified; zoneAgg.bookToDate += toDate.booked;
+      zoneAgg.enqDailyTgt += dailyEnqTgt; zoneAgg.bookDailyTgt += dailyBookTgt;
+      zoneAgg.sharedToday += sharedToday;
+
+      rows += `<tr>
+        <td class="dealer">${dealer}</td>
+        <td>${t.received}</td><td>${t.qualified}</td><td>${tg.enquiryTarget}</td>
+        <td>${enqAchvd===null?'-':enqAchvd.toFixed(0)+'%'}</td>
+        <td>${sharedToday}</td>
+        <td>${dailyEnqTgt}</td>
+        <td>${fmtGap(enqGap)}</td>
+        <td class="${paceClass(enqPace)}">${enqPace===null?'-':enqPace.toFixed(0)+'%'}</td>
+        <td>${t.booked}</td><td>${tg.bookingTarget}</td>
+        <td>${bookAchvd===null?'-':bookAchvd.toFixed(0)+'%'}</td>
+        <td>${dailyBookTgt}</td>
+        <td>${fmtGap(bookGap)}</td>
+        <td class="${paceClass(bookPace)}">${bookPace===null?'-':bookPace.toFixed(0)+'%'}</td>
+      </tr>`;
+    });
+
+    const zEnqAchvd = zoneAgg.enqTarget ? (zoneAgg.qualified/zoneAgg.enqTarget*100) : null;
+    const zBookAchvd = zoneAgg.bookTarget ? (zoneAgg.booked/zoneAgg.bookTarget*100) : null;
+    const zExpEnq = zoneAgg.enqDailyTgt * workingDaysElapsed;
+    const zExpBook = zoneAgg.bookDailyTgt * workingDaysElapsed;
+    const zEnqPace = zExpEnq > 0 ? (zoneAgg.enqToDate/zExpEnq*100) : null;
+    const zBookPace = zExpBook > 0 ? (zoneAgg.bookToDate/zExpBook*100) : null;
+    const zEnqGap = zoneAgg.enqTarget ? (zoneAgg.enqToDate - zExpEnq) : null;
+    const zBookGap = zoneAgg.bookTarget ? (zoneAgg.bookToDate - zExpBook) : null;
+
+    html += `<tr class="zone">
+      <td>${z.zone}</td>
+      <td>${zoneAgg.received}</td><td>${zoneAgg.qualified}</td><td>${zoneAgg.enqTarget}</td>
+      <td>${zEnqAchvd===null?'-':zEnqAchvd.toFixed(0)+'%'}</td>
+      <td>${zoneAgg.sharedToday}</td>
+      <td>${zoneAgg.enqDailyTgt}</td>
+      <td>${fmtGap(zEnqGap)}</td>
+      <td class="${paceClass(zEnqPace)}">${zEnqPace===null?'-':zEnqPace.toFixed(0)+'%'}</td>
+      <td>${zoneAgg.booked}</td><td>${zoneAgg.bookTarget}</td>
+      <td>${zBookAchvd===null?'-':zBookAchvd.toFixed(0)+'%'}</td>
+      <td>${zoneAgg.bookDailyTgt}</td>
+      <td>${fmtGap(zBookGap)}</td>
+      <td class="${paceClass(zBookPace)}">${zBookPace===null?'-':zBookPace.toFixed(0)+'%'}</td>
+    </tr>`;
+    html += rows;
+
+    grand.received += zoneAgg.received; grand.qualified += zoneAgg.qualified; grand.booked += zoneAgg.booked;
+    grand.enqTarget += zoneAgg.enqTarget; grand.bookTarget += zoneAgg.bookTarget;
+    grand.enqToDate += zoneAgg.enqToDate; grand.bookToDate += zoneAgg.bookToDate;
+    grand.enqDailyTgt += zoneAgg.enqDailyTgt; grand.bookDailyTgt += zoneAgg.bookDailyTgt;
+    grand.sharedToday += zoneAgg.sharedToday;
+  });
+
+  const gEnqAchvd = grand.enqTarget ? (grand.qualified/grand.enqTarget*100) : null;
+  const gBookAchvd = grand.bookTarget ? (grand.booked/grand.bookTarget*100) : null;
+  const gExpEnq = grand.enqDailyTgt * workingDaysElapsed;
+  const gExpBook = grand.bookDailyTgt * workingDaysElapsed;
+  const gEnqPace = gExpEnq > 0 ? (grand.enqToDate/gExpEnq*100) : null;
+  const gBookPace = gExpBook > 0 ? (grand.bookToDate/gExpBook*100) : null;
+  const gEnqGap = grand.enqTarget ? (grand.enqToDate - gExpEnq) : null;
+  const gBookGap = grand.bookTarget ? (grand.bookToDate - gExpBook) : null;
+
+  html += `<tr class="total">
+    <td>INCHEON CONNECT</td>
+    <td>${grand.received}</td><td>${grand.qualified}</td><td>${grand.enqTarget}</td>
+    <td>${gEnqAchvd===null?'-':gEnqAchvd.toFixed(0)+'%'}</td>
+    <td>${grand.sharedToday}</td>
+    <td>${grand.enqDailyTgt}</td>
+    <td>${fmtGap(gEnqGap)}</td>
+    <td>${gEnqPace===null?'-':gEnqPace.toFixed(0)+'%'}</td>
+    <td>${grand.booked}</td><td>${grand.bookTarget}</td>
+    <td>${gBookAchvd===null?'-':gBookAchvd.toFixed(0)+'%'}</td>
+    <td>${grand.bookDailyTgt}</td>
+    <td>${fmtGap(gBookGap)}</td>
+    <td>${gBookPace===null?'-':gBookPace.toFixed(0)+'%'}</td>
+  </tr>`;
+
+  html += '</tbody>';
+  table.innerHTML = html;
+}
+
+// ---------------- Worm chart ----------------
+function populateScopeSelect(){
+  const sel = document.getElementById('scopeSelect');
+  sel.innerHTML = '';
+  const optAll = document.createElement('option');
+  optAll.value = 'ALL'; optAll.textContent = 'Overall (Incheon Connect)';
+  sel.appendChild(optAll);
+  ZONES.forEach(z => {
+    const opt = document.createElement('option');
+    opt.value = 'ZONE::' + z.zone; opt.textContent = z.zone;
+    sel.appendChild(opt);
+  });
+  ALL_DEALERS.forEach(d => {
+    const opt = document.createElement('option');
+    opt.value = 'DEALER::' + d; opt.textContent = d;
+    sel.appendChild(opt);
+  });
+}
+
+function dealersForScope(scope){
+  if (scope === 'ALL') return ALL_DEALERS;
+  if (scope.startsWith('ZONE::')){
+    const zname = scope.replace('ZONE::','');
+    const z = ZONES.find(zz => zz.zone === zname);
+    return z ? z.dealers : [];
+  }
+  if (scope.startsWith('DEALER::')) return [scope.replace('DEALER::','')];
+  return [];
+}
+
+let enquiryChart = null;
+let bookingChart = null;
+
+function buildSeries(metric, dealers, workingDaysTotal){
+  const dailyTargetSum = dealers.reduce((sum, d) => {
+    const tg = targets[d] || { enquiryTarget:0, bookingTarget:0 };
+    const val = metric === 'enquiry' ? tg.enquiryTarget : tg.bookingTarget;
+    return sum + Math.ceil(val / workingDaysTotal);
+  }, 0);
+
+  const labels = [];
+  const actualCum = [];
+  const targetCum = [];
+  let runningActual = 0;
+  for (let day = 1; day <= totalDaysInMonth; day++){
+    labels.push(day);
+    let dayActual = 0;
+    dealers.forEach(d => {
+      const rec = dailyData[d][day];
+      dayActual += metric === 'enquiry' ? rec.qualified : rec.booked;
+    });
+    if (day <= DAY) runningActual += dayActual;
+    actualCum.push(day <= DAY ? runningActual : null);
+    targetCum.push(+(dailyTargetSum * cumNonSunday[day]).toFixed(1));
+  }
+  return { labels, actualCum, targetCum };
+}
+
+function renderWormChart(metric, canvasId, existingChart){
+  const { workingDaysTotal } = recalcWorkingDays();
+  const scope = document.getElementById('scopeSelect').value || 'ALL';
+  const dealers = dealersForScope(scope);
+  const { labels, actualCum, targetCum } = buildSeries(metric, dealers, workingDaysTotal);
+
+  const ctx = document.getElementById(canvasId).getContext('2d');
+  if (existingChart) existingChart.destroy();
+  return new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Target (cumulative)',
+          data: targetCum,
+          borderColor: '#146c85',
+          borderDash: [5,4],
+          backgroundColor: 'transparent',
+          pointRadius: 0,
+          tension: 0.15,
+        },
+        {
+          label: 'Actual (cumulative)',
+          data: actualCum,
+          borderColor: '#c07f2e',
+          backgroundColor: 'rgba(192,127,46,0.08)',
+          fill: true,
+          pointRadius: 2,
+          tension: 0.15,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } },
+      scales: {
+        x: { title: { display: true, text: 'Day of month', font: {size:11} } },
+        y: { title: { display: true, text: metric === 'enquiry' ? 'Qualified enquiries' : 'Bookings', font:{size:11} }, beginAtZero: true }
+      }
+    }
+  });
+}
+
+function updateCharts(){
+  enquiryChart = renderWormChart('enquiry', 'enquiryCanvas', enquiryChart);
+  bookingChart = renderWormChart('booking', 'bookingCanvas', bookingChart);
+}
+
+// ---------------- Event wiring ----------------
+document.getElementById('processBtn').addEventListener('click', processFiles);
+document.getElementById('saveSettingsBtn').addEventListener('click', saveSettings);
+document.getElementById('saveTargetsBtn').addEventListener('click', saveTargets);
+document.getElementById('holidaysTotal').addEventListener('change', () => { recalcWorkingDays(); });
+document.getElementById('holidaysSoFar').addEventListener('change', () => { recalcWorkingDays(); });
+document.getElementById('scopeSelect').addEventListener('change', updateCharts);
+
+populateScopeSelect();
+loadSettings();
+</script>
+</body>
+</html>

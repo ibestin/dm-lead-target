@@ -177,7 +177,7 @@
   </div>
   <div class="note">
     Pace % = Actual-to-date ÷ Expected-to-date (Expected-to-date = Daily Target × Working Days Elapsed). Daily Target = Monthly Target ÷ Working Days in Month, rounded up to the next whole number. Gap = Actual-to-date − Expected-to-date (green = ahead of pace, red = behind pace).
-    Channel filter includes: Call Center, CarWale, CarDekho, StartDeal, Meta 01, Meta 02, Hyperlocal, SNS (enquiry) and the same set plus DM (booking) — matched exactly as in the source COUNTIFS formulas.
+    Channel filter includes: Call Center, CarWale, CarDekho, StartDeal, Meta 02, Hyperlocal, Meta 01, SNS (enquiry) and the same set plus DM (booking) — matched exactly as in the source COUNTIFS formulas.
   </div>
 </div>
 
@@ -296,20 +296,22 @@ const cumNonSunday = new Array(totalDaysInMonth + 1).fill(0);
   }
 })();
 
-// ---------------- Persistent storage ----------------
-async function loadSettings(){
+// ---------------- Persistent storage using localStorage ----------------
+function loadSettings(){
   try{
-    const r = await window.storage.get('holiday-settings');
-    if (r && r.value){
-      const v = JSON.parse(r.value);
+    const holidayData = localStorage.getItem('holiday-settings');
+    if (holidayData){
+      const v = JSON.parse(holidayData);
       document.getElementById('holidaysTotal').value = v.totalHolidays ?? 0;
       document.getElementById('holidaysSoFar').value = v.holidaysSoFar ?? 0;
     }
   } catch(e){ /* no saved settings yet */ }
+  
   try{
-    const r = await window.storage.get('dealership-targets');
-    if (r && r.value) targets = JSON.parse(r.value);
+    const targetData = localStorage.getItem('dealership-targets');
+    if (targetData) targets = JSON.parse(targetData);
   } catch(e){ targets = {}; }
+  
   ALL_DEALERS.forEach(d => {
     if (!targets[d]) targets[d] = DEFAULT_TARGETS[d] ? { ...DEFAULT_TARGETS[d] } : { enquiryTarget: 0, bookingTarget: 0 };
   });
@@ -318,19 +320,21 @@ async function loadSettings(){
   renderMainTable();
 }
 
-async function saveSettings(){
+function saveSettings(){
   const { workingDaysTotal, workingDaysElapsed } = recalcWorkingDays();
   try{
-    await window.storage.set('holiday-settings', JSON.stringify(holidaySettings));
+    localStorage.setItem('holiday-settings', JSON.stringify(holidaySettings));
     document.getElementById('processStatus').textContent = 'Settings saved.';
+    document.getElementById('processStatus').className = 'status ok';
   } catch(e){
     document.getElementById('processStatus').textContent = 'Could not save settings.';
+    document.getElementById('processStatus').className = 'status err';
   }
   renderMainTable();
   updateCharts();
 }
 
-async function saveTargets(){
+function saveTargets(){
   ALL_DEALERS.forEach(d => {
     const enqEl = document.getElementById('enq-target-' + safe(d));
     const bookEl = document.getElementById('book-target-' + safe(d));
@@ -340,8 +344,8 @@ async function saveTargets(){
     };
   });
   try{
-    await window.storage.set('dealership-targets', JSON.stringify(targets));
-    document.getElementById('targetStatus').textContent = 'Targets saved.';
+    localStorage.setItem('dealership-targets', JSON.stringify(targets));
+    document.getElementById('targetStatus').textContent = 'Targets saved successfully!';
     document.getElementById('targetStatus').className = 'status ok';
   } catch(e){
     document.getElementById('targetStatus').textContent = 'Could not save targets.';

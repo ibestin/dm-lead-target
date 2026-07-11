@@ -44,6 +44,9 @@
   .field input[type=number]{
     width:90px; padding:6px 8px; border:1px solid var(--line); border-radius:4px; font-size:13px;
   }
+  .field input[type=date]{
+    padding:6px 8px; border:1px solid var(--line); border-radius:4px; font-size:13px;
+  }
   button{
     background:var(--teal-700); color:#fff; border:none; border-radius:4px;
     padding:8px 16px; font-size:12.5px; cursor:pointer; font-weight:600;
@@ -157,6 +160,18 @@
 
 <div class="card">
   <h2>3 · Dashboard</h2>
+  <div class="row" style="margin-bottom:12px;">
+    <div class="field">
+      <label>Date Range (inclusive)</label>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <input type="date" id="filterFrom" style="padding:6px 8px; border:1px solid var(--line); border-radius:4px; font-size:13px;">
+        <span style="color:var(--muted);">to</span>
+        <input type="date" id="filterTo" style="padding:6px 8px; border:1px solid var(--line); border-radius:4px; font-size:13px;">
+        <button id="applyFilterBtn">Apply Filter</button>
+        <button id="resetFilterBtn" class="secondary">Reset</button>
+      </div>
+    </div>
+  </div>
   <div class="scroll-x">
     <table id="mainTable"></table>
   </div>
@@ -190,7 +205,7 @@
 <script>
 // ---------------- Zone / Dealership structure ----------------
 const ZONES = [
-  { zone: "ZONE 1", dealers: ["KL404 - Thiruvananthapuram", "KL405 - Kollam"] },
+  { zone: "ZONE 1", dealers: ["KL404 - Thiruvananthapuram", "KL405 - Kollam", "KL601 - Nilamel"] },
   { zone: "ZONE 2", dealers: ["KL101 - Kodimatha", "KL304 - Thellakom", "KL509 - Thodupuzha", "KL511 - Kanjirappally"] },
   { zone: "ZONE 3", dealers: ["INC02 - Thiruvalla", "KL309 - Kayamkulam", "KL510 - Alappuzha"] },
   { zone: "ZONE 4", dealers: ["KL102 - Edappally", "KL302 - Desom", "KL310 - Nettoor", "KL313 - Muvattupuzha"] },
@@ -205,7 +220,8 @@ const BOOKED_CHANNELS  = ["Call Center","CarWale","CarDekho","StartDeal","DM","H
 // Hardcoded monthly targets (enquiry = qualified enquiry target, booking = booking target)
 const DEFAULT_TARGETS = {
   "KL404 - Thiruvananthapuram": { enquiryTarget: 1600, bookingTarget: 70 },
-  "KL405 - Kollam":             { enquiryTarget: 1100, bookingTarget: 63 },
+  "KL405 - Kollam":             { enquiryTarget: 700,  bookingTarget: 40 },
+  "KL601 - Nilamel":            { enquiryTarget: 400,  bookingTarget: 23 },
   "KL101 - Kodimatha":          { enquiryTarget: 400,  bookingTarget: 32 },
   "KL304 - Thellakom":          { enquiryTarget: 300,  bookingTarget: 28 },
   "KL509 - Thodupuzha":         { enquiryTarget: 450,  bookingTarget: 30 },
@@ -241,6 +257,8 @@ ALL_DEALERS.forEach(d => {
 });
 
 let dataLoaded = false;
+let filterFrom = 1;
+let filterTo = totalDaysInMonth;
 
 // ---------------- Init ----------------
 document.getElementById('dateLine').textContent =
@@ -469,9 +487,11 @@ async function processFiles(){
 }
 
 // ---------------- Aggregation helpers ----------------
-function totalsFor(dealer){
+function totalsFor(dealer, fromDay, toDay){
   let received=0, qualified=0, booked=0;
-  for (let day = 1; day <= totalDaysInMonth; day++){
+  const start = fromDay || 1;
+  const end = toDay || totalDaysInMonth;
+  for (let day = start; day <= end; day++){
     const d = dailyData[dealer][day];
     received += d.received; qualified += d.qualified; booked += d.booked;
   }
@@ -521,30 +541,36 @@ function renderMainTable(){
     </tr>
   </thead><tbody>`;
 
+  const fromDay = filterFrom;
+  const toDay = filterTo;
+  const daysInFilter = toDay - fromDay + 1;
+  const sundaysInFilter = countSundaysUpTo(toDay) - countSundaysUpTo(fromDay - 1);
+  const workingDaysInFilter = Math.max(daysInFilter - sundaysInFilter, 1);
+
   const grand = { received:0, qualified:0, booked:0, enqTarget:0, bookTarget:0, enqToDate:0, bookToDate:0, enqDailyTgt:0, bookDailyTgt:0, sharedToday:0 };
 
   ZONES.forEach(z => {
     const zoneAgg = { received:0, qualified:0, booked:0, enqTarget:0, bookTarget:0, enqToDate:0, bookToDate:0, enqDailyTgt:0, bookDailyTgt:0, sharedToday:0 };
     let rows = '';
     z.dealers.forEach(dealer => {
-      const t = totalsFor(dealer);
+      const t = totalsFor(dealer, fromDay, toDay);
       const toDate = toDateFor(dealer, DAY);
       const tg = targets[dealer] || { enquiryTarget:0, bookingTarget:0 };
       const dailyEnqTgt = Math.ceil(tg.enquiryTarget / workingDaysTotal);
       const dailyBookTgt = Math.ceil(tg.bookingTarget / workingDaysTotal);
-      const expEnq = dailyEnqTgt * workingDaysElapsed;
-      const expBook = dailyBookTgt * workingDaysElapsed;
+      const expEnq = dailyEnqTgt * workingDaysInFilter;
+      const expBook = dailyBookTgt * workingDaysInFilter;
       const enqAchvd = tg.enquiryTarget ? (t.qualified / tg.enquiryTarget * 100) : null;
       const bookAchvd = tg.bookingTarget ? (t.booked / tg.bookingTarget * 100) : null;
-      const enqPace = expEnq > 0 ? (toDate.qualified / expEnq * 100) : null;
-      const bookPace = expBook > 0 ? (toDate.booked / expBook * 100) : null;
-      const enqGap = tg.enquiryTarget ? (toDate.qualified - expEnq) : null;
-      const bookGap = tg.bookingTarget ? (toDate.booked - expBook) : null;
+      const enqPace = expEnq > 0 ? (t.qualified / expEnq * 100) : null;
+      const bookPace = expBook > 0 ? (t.booked / expBook * 100) : null;
+      const enqGap = tg.enquiryTarget ? (t.qualified - expEnq) : null;
+      const bookGap = tg.bookingTarget ? (t.booked - expBook) : null;
       const sharedToday = dailyData[dealer][DAY] ? dailyData[dealer][DAY].qualified : 0;
 
       zoneAgg.received += t.received; zoneAgg.qualified += t.qualified; zoneAgg.booked += t.booked;
       zoneAgg.enqTarget += tg.enquiryTarget; zoneAgg.bookTarget += tg.bookingTarget;
-      zoneAgg.enqToDate += toDate.qualified; zoneAgg.bookToDate += toDate.booked;
+      zoneAgg.enqToDate += t.qualified; zoneAgg.bookToDate += t.booked;
       zoneAgg.enqDailyTgt += dailyEnqTgt; zoneAgg.bookDailyTgt += dailyBookTgt;
       zoneAgg.sharedToday += sharedToday;
 
@@ -566,8 +592,8 @@ function renderMainTable(){
 
     const zEnqAchvd = zoneAgg.enqTarget ? (zoneAgg.qualified/zoneAgg.enqTarget*100) : null;
     const zBookAchvd = zoneAgg.bookTarget ? (zoneAgg.booked/zoneAgg.bookTarget*100) : null;
-    const zExpEnq = zoneAgg.enqDailyTgt * workingDaysElapsed;
-    const zExpBook = zoneAgg.bookDailyTgt * workingDaysElapsed;
+    const zExpEnq = zoneAgg.enqDailyTgt * workingDaysInFilter;
+    const zExpBook = zoneAgg.bookDailyTgt * workingDaysInFilter;
     const zEnqPace = zExpEnq > 0 ? (zoneAgg.enqToDate/zExpEnq*100) : null;
     const zBookPace = zExpBook > 0 ? (zoneAgg.bookToDate/zExpBook*100) : null;
     const zEnqGap = zoneAgg.enqTarget ? (zoneAgg.enqToDate - zExpEnq) : null;
@@ -598,8 +624,8 @@ function renderMainTable(){
 
   const gEnqAchvd = grand.enqTarget ? (grand.qualified/grand.enqTarget*100) : null;
   const gBookAchvd = grand.bookTarget ? (grand.booked/grand.bookTarget*100) : null;
-  const gExpEnq = grand.enqDailyTgt * workingDaysElapsed;
-  const gExpBook = grand.bookDailyTgt * workingDaysElapsed;
+  const gExpEnq = grand.enqDailyTgt * workingDaysInFilter;
+  const gExpBook = grand.bookDailyTgt * workingDaysInFilter;
   const gEnqPace = gExpEnq > 0 ? (grand.enqToDate/gExpEnq*100) : null;
   const gBookPace = gExpBook > 0 ? (grand.bookToDate/gExpBook*100) : null;
   const gEnqGap = grand.enqTarget ? (grand.enqToDate - gExpEnq) : null;
@@ -622,6 +648,48 @@ function renderMainTable(){
 
   html += '</tbody>';
   table.innerHTML = html;
+}
+
+// ---------------- Date filter ----------------
+function initDateFilter(){
+  const fromInput = document.getElementById('filterFrom');
+  const toInput = document.getElementById('filterTo');
+  const firstDay = new Date(YEAR, MONTH-1, 1);
+  const lastDay = new Date(YEAR, MONTH-1, totalDaysInMonth);
+  fromInput.min = firstDay.toISOString().split('T')[0];
+  fromInput.max = lastDay.toISOString().split('T')[0];
+  toInput.min = firstDay.toISOString().split('T')[0];
+  toInput.max = lastDay.toISOString().split('T')[0];
+  fromInput.value = firstDay.toISOString().split('T')[0];
+  toInput.value = lastDay.toISOString().split('T')[0];
+}
+
+function applyFilter(){
+  const fromInput = document.getElementById('filterFrom');
+  const toInput = document.getElementById('filterTo');
+  if (fromInput.value && toInput.value){
+    const fromDate = new Date(fromInput.value);
+    const toDate = new Date(toInput.value);
+    if (fromDate <= toDate){
+      filterFrom = fromDate.getDate();
+      filterTo = toDate.getDate();
+      renderMainTable();
+      updateCharts();
+    }
+  }
+}
+
+function resetFilter(){
+  const fromInput = document.getElementById('filterFrom');
+  const toInput = document.getElementById('filterTo');
+  const firstDay = new Date(YEAR, MONTH-1, 1);
+  const lastDay = new Date(YEAR, MONTH-1, totalDaysInMonth);
+  fromInput.value = firstDay.toISOString().split('T')[0];
+  toInput.value = lastDay.toISOString().split('T')[0];
+  filterFrom = 1;
+  filterTo = totalDaysInMonth;
+  renderMainTable();
+  updateCharts();
 }
 
 // ---------------- Worm chart ----------------
@@ -739,7 +807,10 @@ document.getElementById('saveTargetsBtn').addEventListener('click', saveTargets)
 document.getElementById('holidaysTotal').addEventListener('change', () => { recalcWorkingDays(); });
 document.getElementById('holidaysSoFar').addEventListener('change', () => { recalcWorkingDays(); });
 document.getElementById('scopeSelect').addEventListener('change', updateCharts);
+document.getElementById('applyFilterBtn').addEventListener('click', applyFilter);
+document.getElementById('resetFilterBtn').addEventListener('click', resetFilter);
 
+initDateFilter();
 populateScopeSelect();
 loadSettings();
 </script>

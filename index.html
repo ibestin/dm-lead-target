@@ -217,10 +217,10 @@
       firebase.initializeApp(firebaseConfig);
       db = firebase.database();
       firebaseReady = true;
-      setSyncStatus('online', 'Connected — targets & holiday settings are shared live with everyone using this link.');
+      setSyncStatus('online', 'Connected');
     } catch(err){
       firebaseReady = false;
-      setSyncStatus('error', 'Could not connect to shared database (' + err.message + '). Using local values only — targets you save here will NOT be visible to others until this is fixed.');
+      setSyncStatus('error', 'Connection failed');
     }
   }
 

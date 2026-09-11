@@ -131,7 +131,7 @@
     <button id="clearDataBtn" class="secondary">Clear Data</button>
   </div>
   <div class="status" id="processStatus"></div>
-  <div class="note">Choose at least one file to enable the date range and Process button. The date range you set here decides which month/period the uploaded data is processed into. Uploaded lead data stays local to your browser (not shared); targets and holiday settings below are shared with everyone via the online database.</div>
+  <div class="note">Choose at least one file to enable the date range and Process button. The date range you set here decides which month/period the uploaded data is processed into. Once processed, the resulting dashboard is automatically published and stays visible to anyone with the viewer link until the next time you process files.</div>
 </div>
 
 <!-- settings card -->
@@ -557,12 +557,43 @@
       populateScopeSelect();
       updateCharts();
       const monthLabel = new Date(YEAR, MONTH-1, 1).toLocaleDateString('en-GB', { month:'long', year:'numeric' });
-      statusEl.textContent = `Files processed for ${monthLabel} (days ${filterFrom}\u2013${filterTo}).`;
-      statusEl.className = 'status ok';
+
+      statusEl.textContent = `Files processed for ${monthLabel} (days ${filterFrom}\u2013${filterTo}). Publishing…`;
+      statusEl.className = 'status';
+      const published = await publishToFirebase();
+      if (published){
+        statusEl.textContent = `Files processed for ${monthLabel} (days ${filterFrom}\u2013${filterTo}) and published \u2014 visible to everyone on the viewer link.`;
+        statusEl.className = 'status ok';
+      } else {
+        statusEl.textContent = `Files processed for ${monthLabel} (days ${filterFrom}\u2013${filterTo}), but publishing failed \u2014 viewers still see the previous data. Check your connection and click Process Files again.`;
+        statusEl.className = 'status err';
+      }
     } catch(err){
       statusEl.textContent = 'Error reading file(s): ' + err.message;
       statusEl.className = 'status err';
     }
+  }
+
+  // Pushes the freshly-processed daily data + context to Firebase so the
+  // read-only viewer page (no upload controls) can render the same
+  // dashboard for anyone with that link. Overwrites whatever was
+  // published before — "keep till next upload" means each successful
+  // Process Files call replaces the prior published snapshot.
+  async function publishToFirebase(){
+    const payload = {
+      dailyData,
+      meta: {
+        year: YEAR,
+        month: MONTH,
+        filterFrom,
+        filterTo,
+        totalDaysInMonth,
+        publishedAt: new Date().toISOString(),
+      }
+    };
+    const ok1 = await dbSet('dailyData', payload.dailyData);
+    const ok2 = await dbSet('meta', payload.meta);
+    return ok1 && ok2;
   }
 
   // ----- aggregation helpers (respect filter range) -----

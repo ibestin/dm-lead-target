@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Incheon Connect — Zone/Dealership Lead Dashboard (Viewer)</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-database-compat.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    :root{
+      --teal-900:#0f4c5c;
+      --teal-700:#146c85;
+      --teal-500:#1c8aa8;
+      --ink:#1a2b30;
+      --paper:#f6f8f8;
+      --card:#ffffff;
+      --line:#dfe7e8;
+      --green-dark:#4c9a2a;
+      --green:#7fb547;
+      --green-light:#c9e0a0;
+      --amber:#e8c547;
+      --red:#d4614a;
+      --muted:#6b8085;
+    }
+    body{
+      margin:0; padding:24px; background:var(--paper); color:var(--ink);
+      font-family:"Segoe UI", Roboto, Arial, sans-serif;
+      font-variant-numeric:tabular-nums;
+    }
+    h1{font-size:19px; letter-spacing:.02em; margin:0 0 4px 0; color:var(--teal-900);}
+    .sub{color:var(--muted); font-size:12.5px; margin-bottom:18px;}
+    .card{
+      background:var(--card); border:1px solid var(--line); border-radius:6px;
+      padding:16px 18px; margin-bottom:18px;
+    }
+    .card h2{
+      font-size:13px; text-transform:uppercase; letter-spacing:.06em;
+      color:var(--teal-700); margin:0 0 12px 0; font-weight:700;
+    }
+    table{border-collapse:collapse; width:auto; font-size:12.5px;}
+    th, td{border:1px solid var(--line); padding:5px 10px; text-align:center; white-space:nowrap;}
+    th{background:var(--teal-700); color:#fff; font-weight:600; font-size:11.5px; text-transform:uppercase; letter-spacing:.02em;}
+    td.dealer{text-align:left; font-weight:500;}
+    tr.zone td{background:#eaf3f4; color:var(--teal-900); font-weight:700;}
+    tr.zone td:first-child{text-align:left;}
+    tr.total td:first-child{text-align:left;}
+    tr.total td{background:var(--teal-900); color:#fff; font-weight:700;}
+    .grp-enq{background:#f0f8f4;}
+    .grp-book{background:#fff6ec;}
+    th.grp-enq{background:#3c8b64; }
+    th.grp-book{background:#c07f2e;}
+    .pace-hi{background:#c9e0a0;}
+    .pace-ok{background:#e5edc8;}
+    .pace-mid{background:#f6e6a8;}
+    .pace-low{background:#f0b8ac;}
+    .scroll-x{overflow-x:auto;}
+    .chart-controls{display:flex; gap:10px; align-items:center; margin-bottom:12px; flex-wrap:wrap;}
+    select{padding:6px 8px; border:1px solid var(--line); border-radius:4px; font-size:12.5px;}
+    .note{font-size:11.5px; color:var(--muted); margin-top:10px; line-height:1.5;}
+    canvas{max-height:360px;}
+    .chart-grid{display:grid; grid-template-columns:1fr 1fr; gap:22px;}
+    .chart-title{font-size:12px; font-weight:700; color:var(--teal-700); margin-bottom:8px; text-transform:uppercase; letter-spacing:.05em;}
+    @media (max-width: 720px){ .chart-grid{grid-template-columns:1fr;} }
+    .gap-pos{color:var(--green-dark); font-weight:600;}
+    .gap-neg{color:var(--red); font-weight:600;}
+    .sync-dot{
+      display:inline-block; width:8px; height:8px; border-radius:50%;
+      background:var(--muted); margin-right:6px; vertical-align:middle;
+    }
+    .sync-dot.online{background:var(--green-dark);}
+    .sync-dot.error{background:var(--red);}
+    .sync-line{font-size:11.5px; color:var(--muted); margin-bottom:14px;}
+    .empty-state{
+      text-align:center; padding:40px 20px; color:var(--muted); font-size:13px;
+    }
+  </style>
+</head>
+<body>
+
+<h1>ZONE / DEALERSHIP LEAD DASHBOARD</h1>
+<div class="sub" id="publishedLine">Loading…</div>
+<div class="sync-line"><span class="sync-dot" id="syncDot"></span><span id="syncText">Connecting…</span></div>
+
+<div id="emptyState" class="card empty-state" style="display:none;">
+  No dashboard has been published yet. Please check back after the next data upload.
+</div>
+
+<div id="content" style="display:none;">
+  <!-- dashboard card -->
+  <div class="card">
+    <h2>Dashboard</h2>
+    <div style="margin-bottom:14px; font-size:12px; color:var(--muted);" id="filterInfo"></div>
+    <div class="scroll-x">
+      <table id="mainTable"></table>
+    </div>
+    <div class="note">
+      Pace % = Actual-to-date ÷ Expected-to-date (Expected-to-date = Daily Target × Working Days Elapsed). Daily Target = Monthly Target ÷ Working Days in Month, rounded up to the next whole number. Gap = Actual-to-date − Expected-to-date (green = ahead of pace, red = behind pace).
+      Channel filter includes: Call Center, CarWale, CarDekho, StartDeal, Meta 02, Hyperlocal, Meta 01, SNS (enquiry) and the same set plus DM (booking) — matched exactly as in the source COUNTIFS formulas.
+    </div>
+  </div>
+
+  <!-- worm graph card -->
+  <div class="card">
+    <h2>Worm Graph — Target vs Actual Pace</h2>
+    <div class="chart-controls">
+      <label style="font-size:12.5px; color:var(--muted);">Scope:</label>
+      <select id="scopeSelect"></select>
+    </div>
+    <div class="chart-grid">
+      <div><div class="chart-title">Enquiry</div><canvas id="enquiryCanvas" height="140"></canvas></div>
+      <div><div class="chart-title">Booking</div><canvas id="bookingCanvas" height="140"></canvas></div>
+    </div>
+    <div class="note">
+      Target line assumes an even daily pace across working days (Sundays excluded automatically; the holiday count is applied as a flat reduction to the overall working-day total, not to specific calendar dates, so the target line is a close approximation rather than an exact calendar match). Both charts share the scope filter above.
+    </div>
+  </div>
+</div>
+
+<script>
+  // ================= FIREBASE SETUP =================
+  const firebaseConfig = {
+    apiKey: "AIzaSyDCh17M2Vh8iszkAgLp7orpoYr-bjNCLYQ",
+    authDomain: "kia-otp-pwa.firebaseapp.com",
+    databaseURL: "https://kia-otp-pwa-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "kia-otp-pwa",
+    storageBucket: "kia-otp-pwa.firebasestorage.app",
+    messagingSenderId: "52246983878",
+    appId: "1:52246983878:web:ef01af28f1cd535d1e93c7"
+  };
+
+  const DB_ROOT = "incheon-connect";
+  let firebaseReady = false;
+  let db = null;
+
+  function setSyncStatus(state, text){
+    const dot = document.getElementById('syncDot');
+    const label = document.getElementById('syncText');
+    dot.className = 'sync-dot' + (state ? ' ' + state : '');
+    label.textContent = text;
+  }
+
+  function initFirebase(){
+    try{
+      firebase.initializeApp(firebaseConfig);
+      db = firebase.database();
+      firebaseReady = true;
+      setSyncStatus('online', 'Connected');
+    } catch(err){
+      firebaseReady = false;
+      setSyncStatus('error', 'Connection failed');
+    }
+  }
+
+  function dbGet(path){
+    return new Promise((resolve) => {
+      if (!firebaseReady){ resolve(null); return; }
+      db.ref(`${DB_ROOT}/${path}`).get()
+        .then(snap => resolve(snap.exists() ? snap.val() : null))
+        .catch(err => { console.error('Firebase read failed:', path, err); resolve(null); });
+    });
+  }
+
+  // ----- fixed structure (must match the admin dashboard) -----
+  const ZONES = [
+    { zone: "ZONE 1", dealers: ["KL404 - Thiruvananthapuram", "KL405 - Kollam", "KL601 - Nilamel"] },
+    { zone: "ZONE 2", dealers: ["KL101 - Kodimatha", "KL304 - Thellakom", "KL509 - Thodupuzha", "KL511 - Kanjirappally"] },
+    { zone: "ZONE 3", dealers: ["KL513 - Thiruvalla", "KL309 - Kayamkulam", "KL510 - Alappuzha"] },
+    { zone: "ZONE 4", dealers: ["KL102 - Edappally", "KL302 - Desom", "KL310 - Nettoor", "KL313 - Muvattupuzha"] },
+    { zone: "ZONE 5", dealers: ["KL103 - Sakthan Nagar", "KL308 - Thrissur", "KL312 - Vadanappally"] },
+    { zone: "ZONE 6", dealers: ["KL311 - Palakkad"] },
+  ];
+  const ALL_DEALERS = ZONES.flatMap(z => z.dealers);
+  const DEFAULT_TARGETS = {
+    "KL404 - Thiruvananthapuram": { enquiryTarget: 1600, bookingTarget: 70 },
+    "KL405 - Kollam":             { enquiryTarget: 700,  bookingTarget: 40 },
+    "KL601 - Nilamel":            { enquiryTarget: 400,  bookingTarget: 23 },
+    "KL101 - Kodimatha":          { enquiryTarget: 400,  bookingTarget: 32 },
+    "KL304 - Thellakom":          { enquiryTarget: 300,  bookingTarget: 28 },
+    "KL509 - Thodupuzha":         { enquiryTarget: 450,  bookingTarget: 30 },
+    "KL511 - Kanjirappally":      { enquiryTarget: 400,  bookingTarget: 26 },
+    "KL513 - Thiruvalla":         { enquiryTarget: 500,  bookingTarget: 31 },
+    "KL309 - Kayamkulam":         { enquiryTarget: 400,  bookingTarget: 32 },
+    "KL510 - Alappuzha":          { enquiryTarget: 400,  bookingTarget: 29 },
+    "KL102 - Edappally":          { enquiryTarget: 1000, bookingTarget: 70 },
+    "KL302 - Desom":              { enquiryTarget: 650,  bookingTarget: 40 },
+    "KL310 - Nettoor":            { enquiryTarget: 650,  bookingTarget: 45 },
+    "KL313 - Muvattupuzha":       { enquiryTarget: 650,  bookingTarget: 35 },
+    "KL103 - Sakthan Nagar":      { enquiryTarget: 300,  bookingTarget: 25 },
+    "KL308 - Thrissur":           { enquiryTarget: 600,  bookingTarget: 35 },
+    "KL312 - Vadanappally":       { enquiryTarget: 500,  bookingTarget: 34 },
+    "KL311 - Palakkad":           { enquiryTarget: 1100, bookingTarget: 75 },
+  };
+
+  // ----- state (populated entirely from Firebase) -----
+  let targets = {};
+  let dailyData = {};
+  ALL_DEALERS.forEach(d => {
+    dailyData[d] = {};
+    for (let day = 1; day <= 31; day++) dailyData[d][day] = { received:0, qualified:0, booked:0 };
+  });
+
+  let YEAR, MONTH, DAY, totalDaysInMonth, filterFrom, filterTo;
+  let holidaySettings = { totalHolidays: 0, holidaysSoFar: 0 };
+  let cumNonSunday = new Array(32).fill(0);
+
+  function countSundaysUpTo(day){
+    let c = 0;
+    for (let d = 1; d <= day; d++){
+      if (new Date(YEAR, MONTH-1, d).getDay() === 0) c++;
+    }
+    return c;
+  }
+
+  function recalcCumNonSunday(){
+    cumNonSunday = new Array(32).fill(0);
+    let c = 0;
+    for (let d = 1; d <= 31; d++){
+      if (d <= totalDaysInMonth && new Date(YEAR, MONTH-1, d).getDay() !== 0) c++;
+      cumNonSunday[d] = c;
+    }
+  }
+
+  function recalcWorkingDays(){
+    const sundaysTotal = countSundaysUpTo(totalDaysInMonth);
+    const sundaysElapsed = countSundaysUpTo(DAY);
+    const workingDaysTotal = Math.max(totalDaysInMonth - sundaysTotal - holidaySettings.totalHolidays, 1);
+    const workingDaysElapsed = Math.max(DAY - sundaysElapsed - holidaySettings.holidaysSoFar, 0);
+    return { workingDaysTotal, workingDaysElapsed };
+  }
+
+  function paceClass(pct){
+    if (pct === null) return '';
+    if (pct >= 110) return 'pace-hi';
+    if (pct >= 100) return 'pace-ok';
+    if (pct >= 80) return 'pace-mid';
+    return 'pace-low';
+  }
+
+  function fmtGap(v){
+    if (v === null) return '-';
+    const r = Math.round(v);
+    const cls = r >= 0 ? 'gap-pos' : 'gap-neg';
+    const sign = r > 0 ? '+' : '';
+    return `<span class="${cls}">${sign}${r}</span>`;
+  }
+
+  function totalsFor(dealer, fromDay, toDay){
+    let received=0, qualified=0, booked=0;
+    for (let day = fromDay; day <= toDay; day++){
+      const d = dailyData[dealer][day] || { received:0, qualified:0, booked:0 };
+      received += d.received; qualified += d.qualified; booked += d.booked;
+    }
+    return { received, qualified, booked };
+  }
+
+  // ----- render main table (fixed to the published range, no controls) -----
+  function renderMainTable(){
+    const { workingDaysTotal } = recalcWorkingDays();
+    const table = document.getElementById('mainTable');
+    const fromDay = filterFrom;
+    const toDay = filterTo;
+    const daysInFilter = toDay - fromDay + 1;
+    const sundaysInFilter = countSundaysUpTo(toDay) - countSundaysUpTo(fromDay - 1);
+    const workingDaysInFilter = Math.max(daysInFilter - sundaysInFilter, 1);
+
+    let html = `<thead>
+      <tr>
+        <th rowspan="2" style="text-align:left;">Dealership</th>
+        <th colspan="8" class="grp-enq">Enquiry</th>
+        <th colspan="6" class="grp-book">Booking</th>
+      </tr>
+      <tr>
+        <th class="grp-enq">Received</th><th class="grp-enq">Qualified</th><th class="grp-enq">Target</th>
+        <th class="grp-enq">Achvd %</th><th class="grp-enq">Shared Today</th><th class="grp-enq">Daily Tgt</th>
+        <th class="grp-enq">Gap</th><th class="grp-enq">Pace %</th>
+        <th class="grp-book">Booked</th><th class="grp-book">Target</th><th class="grp-book">Achvd %</th>
+        <th class="grp-book">Daily Tgt</th><th class="grp-book">Gap</th><th class="grp-book">Pace %</th>
+      </tr>
+    </thead><tbody>`;
+
+    const grand = { received:0, qualified:0, booked:0, enqTarget:0, bookTarget:0, enqToDate:0, bookToDate:0, enqDailyTgt:0, bookDailyTgt:0, sharedToday:0 };
+
+    ZONES.forEach(z => {
+      const zoneAgg = { received:0, qualified:0, booked:0, enqTarget:0, bookTarget:0, enqToDate:0, bookToDate:0, enqDailyTgt:0, bookDailyTgt:0, sharedToday:0 };
+      let rows = '';
+      z.dealers.forEach(dealer => {
+        const t = totalsFor(dealer, fromDay, toDay);
+        const tg = targets[dealer] || { enquiryTarget:0, bookingTarget:0 };
+        const dailyEnqTgt = Math.ceil(tg.enquiryTarget / workingDaysTotal);
+        const dailyBookTgt = Math.ceil(tg.bookingTarget / workingDaysTotal);
+        const expEnq = dailyEnqTgt * workingDaysInFilter;
+        const expBook = dailyBookTgt * workingDaysInFilter;
+        const enqAchvd = tg.enquiryTarget ? (t.qualified / tg.enquiryTarget * 100) : null;
+        const bookAchvd = tg.bookingTarget ? (t.booked / tg.bookingTarget * 100) : null;
+        const enqPace = expEnq > 0 ? (t.qualified / expEnq * 100) : null;
+        const bookPace = expBook > 0 ? (t.booked / expBook * 100) : null;
+        const enqGap = tg.enquiryTarget ? (t.qualified - expEnq) : null;
+        const bookGap = tg.bookingTarget ? (t.booked - expBook) : null;
+        const sharedToday = dailyData[dealer][toDay] ? dailyData[dealer][toDay].qualified : 0;
+
+        zoneAgg.received += t.received; zoneAgg.qualified += t.qualified; zoneAgg.booked += t.booked;
+        zoneAgg.enqTarget += tg.enquiryTarget; zoneAgg.bookTarget += tg.bookingTarget;
+        zoneAgg.enqToDate += t.qualified; zoneAgg.bookToDate += t.booked;
+        zoneAgg.enqDailyTgt += dailyEnqTgt; zoneAgg.bookDailyTgt += dailyBookTgt;
+        zoneAgg.sharedToday += sharedToday;
+
+        rows += `<tr>
+          <td class="dealer">${dealer}</td>
+          <td>${t.received}</td><td>${t.qualified}</td><td>${tg.enquiryTarget}</td>
+          <td>${enqAchvd===null?'-':enqAchvd.toFixed(0)+'%'}</td>
+          <td>${sharedToday}</td>
+          <td>${dailyEnqTgt}</td>
+          <td>${fmtGap(enqGap)}</td>
+          <td class="${paceClass(enqPace)}">${enqPace===null?'-':enqPace.toFixed(0)+'%'}</td>
+          <td>${t.booked}</td><td>${tg.bookingTarget}</td>
+          <td>${bookAchvd===null?'-':bookAchvd.toFixed(0)+'%'}</td>
+          <td>${dailyBookTgt}</td>
+          <td>${fmtGap(bookGap)}</td>
+          <td class="${paceClass(bookPace)}">${bookPace===null?'-':bookPace.toFixed(0)+'%'}</td>
+        </tr>`;
+      });
+
+      const zEnqAchvd = zoneAgg.enqTarget ? (zoneAgg.qualified/zoneAgg.enqTarget*100) : null;
+      const zBookAchvd = zoneAgg.bookTarget ? (zoneAgg.booked/zoneAgg.bookTarget*100) : null;
+      const zExpEnq = zoneAgg.enqDailyTgt * workingDaysInFilter;
+      const zExpBook = zoneAgg.bookDailyTgt * workingDaysInFilter;
+      const zEnqPace = zExpEnq > 0 ? (zoneAgg.enqToDate/zExpEnq*100) : null;
+      const zBookPace = zExpBook > 0 ? (zoneAgg.bookToDate/zExpBook*100) : null;
+      const zEnqGap = zoneAgg.enqTarget ? (zoneAgg.enqToDate - zExpEnq) : null;
+      const zBookGap = zoneAgg.bookTarget ? (zoneAgg.bookToDate - zExpBook) : null;
+
+      html += `<tr class="zone">
+        <td>${z.zone}</td>
+        <td>${zoneAgg.received}</td><td>${zoneAgg.qualified}</td><td>${zoneAgg.enqTarget}</td>
+        <td>${zEnqAchvd===null?'-':zEnqAchvd.toFixed(0)+'%'}</td>
+        <td>${zoneAgg.sharedToday}</td>
+        <td>${zoneAgg.enqDailyTgt}</td>
+        <td>${fmtGap(zEnqGap)}</td>
+        <td class="${paceClass(zEnqPace)}">${zEnqPace===null?'-':zEnqPace.toFixed(0)+'%'}</td>
+        <td>${zoneAgg.booked}</td><td>${zoneAgg.bookTarget}</td>
+        <td>${zBookAchvd===null?'-':zBookAchvd.toFixed(0)+'%'}</td>
+        <td>${zoneAgg.bookDailyTgt}</td>
+        <td>${fmtGap(zBookGap)}</td>
+        <td class="${paceClass(zBookPace)}">${zBookPace===null?'-':zBookPace.toFixed(0)+'%'}</td>
+      </tr>`;
+      html += rows;
+
+      grand.received += zoneAgg.received; grand.qualified += zoneAgg.qualified; grand.booked += zoneAgg.booked;
+      grand.enqTarget += zoneAgg.enqTarget; grand.bookTarget += zoneAgg.bookTarget;
+      grand.enqToDate += zoneAgg.enqToDate; grand.bookToDate += zoneAgg.bookToDate;
+      grand.enqDailyTgt += zoneAgg.enqDailyTgt; grand.bookDailyTgt += zoneAgg.bookDailyTgt;
+      grand.sharedToday += zoneAgg.sharedToday;
+    });
+
+    const gEnqAchvd = grand.enqTarget ? (grand.qualified/grand.enqTarget*100) : null;
+    const gBookAchvd = grand.bookTarget ? (grand.booked/grand.bookTarget*100) : null;
+    const gExpEnq = grand.enqDailyTgt * workingDaysInFilter;
+    const gExpBook = grand.bookDailyTgt * workingDaysInFilter;
+    const gEnqPace = gExpEnq > 0 ? (grand.enqToDate/gExpEnq*100) : null;
+    const gBookPace = gExpBook > 0 ? (grand.bookToDate/gExpBook*100) : null;
+    const gEnqGap = grand.enqTarget ? (grand.enqToDate - gExpEnq) : null;
+    const gBookGap = grand.bookTarget ? (grand.bookToDate - gExpBook) : null;
+
+    html += `<tr class="total">
+      <td>INCHEON CONNECT</td>
+      <td>${grand.received}</td><td>${grand.qualified}</td><td>${grand.enqTarget}</td>
+      <td>${gEnqAchvd===null?'-':gEnqAchvd.toFixed(0)+'%'}</td>
+      <td>${grand.sharedToday}</td>
+      <td>${grand.enqDailyTgt}</td>
+      <td>${fmtGap(gEnqGap)}</td>
+      <td class="${paceClass(gEnqPace)}">${gEnqPace===null?'-':gEnqPace.toFixed(0)+'%'}</td>
+      <td>${grand.booked}</td><td>${grand.bookTarget}</td>
+      <td>${gBookAchvd===null?'-':gBookAchvd.toFixed(0)+'%'}</td>
+      <td>${grand.bookDailyTgt}</td>
+      <td>${fmtGap(gBookGap)}</td>
+      <td class="${paceClass(gBookPace)}">${gBookPace===null?'-':gBookPace.toFixed(0)+'%'}</td>
+    </tr>`;
+
+    html += '</tbody>';
+    table.innerHTML = html;
+
+    document.getElementById('filterInfo').textContent =
+      `(showing days ${filterFrom}\u2013${filterTo} \u00b7 ${workingDaysInFilter} working days in filter)`;
+  }
+
+  // ----- worm chart -----
+  function populateScopeSelect(){
+    const sel = document.getElementById('scopeSelect');
+    sel.innerHTML = '';
+    const optAll = document.createElement('option');
+    optAll.value = 'ALL'; optAll.textContent = 'Overall (Incheon Connect)';
+    sel.appendChild(optAll);
+    ZONES.forEach(z => {
+      const opt = document.createElement('option');
+      opt.value = 'ZONE::' + z.zone; opt.textContent = z.zone;
+      sel.appendChild(opt);
+    });
+    ALL_DEALERS.forEach(d => {
+      const opt = document.createElement('option');
+      opt.value = 'DEALER::' + d; opt.textContent = d;
+      sel.appendChild(opt);
+    });
+  }
+
+  function dealersForScope(scope){
+    if (scope === 'ALL') return ALL_DEALERS;
+    if (scope.startsWith('ZONE::')){
+      const zname = scope.replace('ZONE::','');
+      const z = ZONES.find(zz => zz.zone === zname);
+      return z ? z.dealers : [];
+    }
+    if (scope.startsWith('DEALER::')) return [scope.replace('DEALER::','')];
+    return [];
+  }
+
+  let enquiryChart = null, bookingChart = null;
+
+  function buildSeries(metric, dealers, workingDaysTotal){
+    const dailyTargetSum = dealers.reduce((sum, d) => {
+      const tg = targets[d] || { enquiryTarget:0, bookingTarget:0 };
+      const val = metric === 'enquiry' ? tg.enquiryTarget : tg.bookingTarget;
+      return sum + Math.ceil(val / workingDaysTotal);
+    }, 0);
+
+    const labels = [];
+    const actualCum = [];
+    const targetCum = [];
+    let runningActual = 0;
+    for (let day = 1; day <= totalDaysInMonth; day++){
+      labels.push(day);
+      let dayActual = 0;
+      dealers.forEach(d => {
+        const rec = dailyData[d][day] || { qualified:0, booked:0 };
+        dayActual += metric === 'enquiry' ? rec.qualified : rec.booked;
+      });
+      if (day <= DAY) runningActual += dayActual;
+      actualCum.push(day <= DAY ? runningActual : null);
+      targetCum.push(+(dailyTargetSum * cumNonSunday[day]).toFixed(1));
+    }
+    return { labels, actualCum, targetCum };
+  }
+
+  function renderWormChart(metric, canvasId, existingChart){
+    const { workingDaysTotal } = recalcWorkingDays();
+    const scope = document.getElementById('scopeSelect').value || 'ALL';
+    const dealers = dealersForScope(scope);
+    const { labels, actualCum, targetCum } = buildSeries(metric, dealers, workingDaysTotal);
+
+    const ctx = document.getElementById(canvasId).getContext('2d');
+    if (existingChart) existingChart.destroy();
+    return new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Target (cumulative)',
+            data: targetCum,
+            borderColor: '#146c85',
+            borderDash: [5,4],
+            backgroundColor: 'transparent',
+            pointRadius: 0,
+            tension: 0.15,
+          },
+          {
+            label: 'Actual (cumulative)',
+            data: actualCum,
+            borderColor: '#c07f2e',
+            backgroundColor: 'rgba(192,127,46,0.08)',
+            fill: true,
+            pointRadius: 2,
+            tension: 0.15,
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        interaction: { mode: 'index', intersect: false },
+        plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } },
+        scales: {
+          x: { title: { display: true, text: 'Day of month', font: {size:11} } },
+          y: { title: { display: true, text: metric === 'enquiry' ? 'Qualified enquiries' : 'Bookings', font:{size:11} }, beginAtZero: true }
+        }
+      }
+    });
+  }
+
+  function updateCharts(){
+    enquiryChart = renderWormChart('enquiry', 'enquiryCanvas', enquiryChart);
+    bookingChart = renderWormChart('booking', 'bookingCanvas', bookingChart);
+  }
+
+  function holidayKey(){
+    return `${String(YEAR)}-${String(MONTH).padStart(2,'0')}`;
+  }
+
+  // ----- initialization: pull everything from Firebase, render read-only -----
+  (async function init(){
+    initFirebase();
+
+    const [meta, remoteTargets, remoteDailyData] = await Promise.all([
+      dbGet('meta'),
+      dbGet('targets'),
+      dbGet('dailyData'),
+    ]);
+
+    if (!meta || !remoteDailyData){
+      document.getElementById('emptyState').style.display = 'block';
+      document.getElementById('publishedLine').textContent = 'No published data yet.';
+      return;
+    }
+
+    YEAR = meta.year;
+    MONTH = meta.month;
+    totalDaysInMonth = meta.totalDaysInMonth;
+    filterFrom = meta.filterFrom;
+    filterTo = meta.filterTo;
+    DAY = filterTo; // treat the published "to" day as the as-of day for pace math
+    recalcCumNonSunday();
+
+    targets = remoteTargets || {};
+    ALL_DEALERS.forEach(d => {
+      if (!targets[d]) targets[d] = DEFAULT_TARGETS[d] ? { ...DEFAULT_TARGETS[d] } : { enquiryTarget: 0, bookingTarget: 0 };
+    });
+
+    ALL_DEALERS.forEach(d => {
+      dailyData[d] = remoteDailyData[d] || {};
+      for (let day = 1; day <= 31; day++){
+        if (!dailyData[d][day]) dailyData[d][day] = { received:0, qualified:0, booked:0 };
+      }
+    });
+
+    const remoteHolidays = await dbGet(`holidays/${holidayKey()}`);
+    holidaySettings = remoteHolidays || { totalHolidays: 0, holidaysSoFar: 0 };
+
+    const monthLabel = new Date(YEAR, MONTH-1, 1).toLocaleDateString('en-GB', { month:'long', year:'numeric' });
+    const publishedDate = meta.publishedAt ? new Date(meta.publishedAt) : null;
+    const publishedStr = publishedDate
+      ? publishedDate.toLocaleString('en-GB', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })
+      : 'unknown time';
+    document.getElementById('publishedLine').textContent =
+      `${monthLabel} \u00b7 days ${filterFrom}\u2013${filterTo} \u00b7 Last updated: ${publishedStr}`;
+
+    document.getElementById('emptyState').style.display = 'none';
+    document.getElementById('content').style.display = 'block';
+
+    renderMainTable();
+    populateScopeSelect();
+    updateCharts();
+
+    document.getElementById('scopeSelect').addEventListener('change', updateCharts);
+  })();
+</script>
+</body>
+</html>

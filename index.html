@@ -6,6 +6,8 @@
   <title>Incheon Connect — Zone/Dealership Lead Dashboard</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-database-compat.js"></script>
   <style>
     * { box-sizing: border-box; }
     :root{
@@ -55,6 +57,7 @@
     button:hover{background:var(--teal-900);}
     button.secondary{background:#fff; color:var(--teal-700); border:1px solid var(--teal-700);}
     button.secondary:hover{background:#eef6f7;}
+    button:disabled{opacity:.5; cursor:not-allowed;}
     .status{font-size:12px; margin-top:8px; color:var(--muted);}
     .status.ok{color:var(--green-dark);}
     .status.err{color:var(--red);}
@@ -91,15 +94,23 @@
     @media (max-width: 720px){ .chart-grid{grid-template-columns:1fr;} }
     .gap-pos{color:var(--green-dark); font-weight:600;}
     .gap-neg{color:var(--red); font-weight:600;}
-    .filter-row{ display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; }
+    .filter-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; }
     .filter-row .field { flex-direction: row; align-items: center; gap: 6px; }
     .filter-row .field label { margin-right: 4px; }
+    .sync-dot{
+      display:inline-block; width:8px; height:8px; border-radius:50%;
+      background:var(--muted); margin-right:6px; vertical-align:middle;
+    }
+    .sync-dot.online{background:var(--green-dark);}
+    .sync-dot.error{background:var(--red);}
+    .sync-line{font-size:11.5px; color:var(--muted); margin-bottom:14px;}
   </style>
 </head>
 <body>
 
 <h1>ZONE / DEALERSHIP LEAD DASHBOARD</h1>
 <div class="sub" id="dateLine">Loading current date…</div>
+<div class="sync-line"><span class="sync-dot" id="syncDot"></span><span id="syncText">Connecting to shared database…</span></div>
 
 <!-- upload card -->
 <div class="card">
@@ -120,12 +131,12 @@
     <button id="clearDataBtn" class="secondary">Clear Data</button>
   </div>
   <div class="status" id="processStatus"></div>
-  <div class="note">Choose at least one file to enable the date range and Process button. The date range you set here decides which month/period the uploaded data is processed into.</div>
+  <div class="note">Choose at least one file to enable the date range and Process button. The date range you set here decides which month/period the uploaded data is processed into. Uploaded lead data stays local to your browser (not shared); targets and holiday settings below are shared with everyone via the online database.</div>
 </div>
 
 <!-- settings card -->
 <div class="card">
-  <h2>2 · Month Settings &amp; Targets</h2>
+  <h2>2 · Month Settings &amp; Targets <span style="font-weight:400; text-transform:none; letter-spacing:0; color:var(--muted);">(shared with everyone)</span></h2>
   <div class="row">
     <div class="field"><label>Sundays this month (auto)</label><input type="number" id="sundaysAuto" disabled class="target-input"></div>
     <div class="field"><label>Holidays this month (excl. Sundays)</label><input type="number" id="holidaysTotal" min="0" class="target-input" value="0"></div>
@@ -176,6 +187,64 @@
 </div>
 
 <script>
+  // ================= FIREBASE SETUP =================
+  // Public client config — safe to expose in client-side code.
+  const firebaseConfig = {
+    apiKey: "AIzaSyDCh17M2Vh8iszkAgLp7orpoYr-bjNCLYQ",
+    authDomain: "kia-otp-pwa.firebaseapp.com",
+    databaseURL: "https://kia-otp-pwa-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "kia-otp-pwa",
+    storageBucket: "kia-otp-pwa.firebasestorage.app",
+    messagingSenderId: "52246983878",
+    appId: "1:52246983878:web:ef01af28f1cd535d1e93c7"
+  };
+
+  // Namespaced under /incheon-connect/ so this tool never collides with
+  // other data (e.g. the OTP extension) living in the same Firebase project.
+  const DB_ROOT = "incheon-connect";
+  let firebaseReady = false;
+  let db = null;
+
+  function setSyncStatus(state, text){
+    const dot = document.getElementById('syncDot');
+    const label = document.getElementById('syncText');
+    dot.className = 'sync-dot' + (state ? ' ' + state : '');
+    label.textContent = text;
+  }
+
+  function initFirebase(){
+    try{
+      firebase.initializeApp(firebaseConfig);
+      db = firebase.database();
+      firebaseReady = true;
+      setSyncStatus('online', 'Connected — targets & holiday settings are shared live with everyone using this link.');
+    } catch(err){
+      firebaseReady = false;
+      setSyncStatus('error', 'Could not connect to shared database (' + err.message + '). Using local values only — targets you save here will NOT be visible to others until this is fixed.');
+    }
+  }
+
+  // Generic helpers with graceful fallback: if Firebase is unreachable,
+  // callers keep working off whatever is already in memory / localStorage,
+  // so the dashboard never breaks entirely.
+  function dbGet(path){
+    return new Promise((resolve) => {
+      if (!firebaseReady){ resolve(null); return; }
+      db.ref(`${DB_ROOT}/${path}`).get()
+        .then(snap => resolve(snap.exists() ? snap.val() : null))
+        .catch(err => { console.error('Firebase read failed:', path, err); resolve(null); });
+    });
+  }
+
+  function dbSet(path, value){
+    return new Promise((resolve) => {
+      if (!firebaseReady){ resolve(false); return; }
+      db.ref(`${DB_ROOT}/${path}`).set(value)
+        .then(() => resolve(true))
+        .catch(err => { console.error('Firebase write failed:', path, err); resolve(false); });
+    });
+  }
+
   // ----- fixed structure -----
   const ZONES = [
     { zone: "ZONE 1", dealers: ["KL404 - Thiruvananthapuram", "KL405 - Kollam", "KL601 - Nilamel"] },
@@ -212,9 +281,6 @@
 
   // ----- global state -----
   let today = new Date();
-  // YEAR/MONTH now represent the month of the CURRENTLY SELECTED FILTER RANGE
-  // (derived from filterFromDate below), not always "today". This lets uploads
-  // and pace calculations work for any month, not just the current one.
   let YEAR = today.getFullYear();
   let MONTH = today.getMonth() + 1;  // 1-12
   let DAY = today.getDate();
@@ -229,8 +295,6 @@
   });
 
   let dataLoaded = false;
-  // filterFrom/filterTo are day-of-month numbers WITHIN the selected month (YEAR/MONTH above).
-  // filterFromDate/filterToDate hold the actual Date objects backing the <input type="date"> fields.
   let filterFrom = 1;
   let filterTo = totalDaysInMonth;
   let filterFromDate = new Date(YEAR, MONTH - 1, 1);
@@ -244,7 +308,6 @@
     }
     return c;
   }
-  // these are recomputed whenever the month context changes (see setMonthContext)
   let sundaysTotal = countSundaysUpTo(totalDaysInMonth);
   let sundaysElapsed = countSundaysUpTo(DAY);
   let cumNonSunday = new Array(32).fill(0);
@@ -260,22 +323,17 @@
   recalcCumNonSunday();
 
   function holidayKey(){
-    return `holiday-settings-${YEAR}-${String(MONTH).padStart(2,'0')}`;
+    return `${String(YEAR)}-${String(MONTH).padStart(2,'0')}`;
   }
 
   // Re-derive YEAR/MONTH/totalDaysInMonth/DAY/Sundays from the filter's From/To dates.
-  // Called whenever the date filter changes. Assumes the filter range stays within
-  // a single calendar month (the month of filterFromDate is treated as authoritative).
-  function setMonthContext(fromDate, toDate){
+  async function setMonthContext(fromDate, toDate){
     YEAR = fromDate.getFullYear();
     MONTH = fromDate.getMonth() + 1;
     totalDaysInMonth = new Date(YEAR, MONTH, 0).getDate();
     sundaysTotal = countSundaysUpTo(totalDaysInMonth);
     recalcCumNonSunday();
 
-    // "as of" day for elapsed/pace purposes: if this month+year matches the real
-    // current month, use today's date-of-month; otherwise treat the filter's
-    // To-date (capped at month length) as fully elapsed.
     const isCurrentMonth = (YEAR === today.getFullYear() && MONTH === (today.getMonth()+1));
     DAY = isCurrentMonth ? today.getDate() : Math.min(toDate.getDate(), totalDaysInMonth);
     sundaysElapsed = countSundaysUpTo(DAY);
@@ -283,20 +341,14 @@
     filterFrom = fromDate.getDate();
     filterTo = Math.min(toDate.getDate(), totalDaysInMonth);
 
-    // load this month's saved holiday counts (per-month, since Sundays/holidays differ by month)
-    loadHolidaysForCurrentMonth();
+    await loadHolidaysForCurrentMonth();
   }
 
-  function loadHolidaysForCurrentMonth(){
-    try{
-      const saved = localStorage.getItem(holidayKey());
-      const v = saved ? JSON.parse(saved) : { totalHolidays: 0, holidaysSoFar: 0 };
-      document.getElementById('holidaysTotal').value = v.totalHolidays ?? 0;
-      document.getElementById('holidaysSoFar').value = v.holidaysSoFar ?? 0;
-    } catch(e){
-      document.getElementById('holidaysTotal').value = 0;
-      document.getElementById('holidaysSoFar').value = 0;
-    }
+  async function loadHolidaysForCurrentMonth(){
+    const remote = await dbGet(`holidays/${holidayKey()}`);
+    const v = remote || { totalHolidays: 0, holidaysSoFar: 0 };
+    document.getElementById('holidaysTotal').value = v.totalHolidays ?? 0;
+    document.getElementById('holidaysSoFar').value = v.holidaysSoFar ?? 0;
   }
 
   // ----- working days recalculation -----
@@ -312,13 +364,10 @@
     return { workingDaysTotal, workingDaysElapsed };
   }
 
-  // ----- localStorage helpers -----
-  function loadSettings(){
-    // holidays for the active month are loaded inside setMonthContext() (called from initDateFilter)
-    try{
-      const targetData = localStorage.getItem('dealership-targets');
-      if (targetData) targets = JSON.parse(targetData);
-    } catch(e){ targets = {}; }
+  // ----- shared (Firebase) load/save helpers -----
+  async function loadSettings(){
+    const remoteTargets = await dbGet('targets');
+    targets = remoteTargets || {};
     ALL_DEALERS.forEach(d => {
       if (!targets[d]) targets[d] = DEFAULT_TARGETS[d] ? { ...DEFAULT_TARGETS[d] } : { enquiryTarget: 0, bookingTarget: 0 };
     });
@@ -329,21 +378,24 @@
     updateCharts();
   }
 
-  function saveSettings(){
+  async function saveSettings(){
     recalcWorkingDays();
-    try{
-      localStorage.setItem(holidayKey(), JSON.stringify(holidaySettings));
-      document.getElementById('processStatus').textContent = 'Settings saved.';
-      document.getElementById('processStatus').className = 'status ok';
-    } catch(e){
-      document.getElementById('processStatus').textContent = 'Could not save settings.';
-      document.getElementById('processStatus').className = 'status err';
+    const statusEl = document.getElementById('processStatus');
+    statusEl.textContent = 'Saving…';
+    statusEl.className = 'status';
+    const ok = await dbSet(`holidays/${holidayKey()}`, holidaySettings);
+    if (ok){
+      statusEl.textContent = 'Settings saved — visible to everyone with this link.';
+      statusEl.className = 'status ok';
+    } else {
+      statusEl.textContent = 'Could not save to shared database. Check your connection and try again.';
+      statusEl.className = 'status err';
     }
     renderMainTable();
     updateCharts();
   }
 
-  function saveTargets(){
+  async function saveTargets(){
     ALL_DEALERS.forEach(d => {
       const enqEl = document.getElementById('enq-target-' + safe(d));
       const bookEl = document.getElementById('book-target-' + safe(d));
@@ -352,13 +404,16 @@
         bookingTarget: parseInt(bookEl.value) || 0,
       };
     });
-    try{
-      localStorage.setItem('dealership-targets', JSON.stringify(targets));
-      document.getElementById('targetStatus').textContent = 'Targets saved successfully!';
-      document.getElementById('targetStatus').className = 'status ok';
-    } catch(e){
-      document.getElementById('targetStatus').textContent = 'Could not save targets.';
-      document.getElementById('targetStatus').className = 'status err';
+    const statusEl = document.getElementById('targetStatus');
+    statusEl.textContent = 'Saving…';
+    statusEl.className = 'status';
+    const ok = await dbSet('targets', targets);
+    if (ok){
+      statusEl.textContent = 'Targets saved — visible to everyone with this link.';
+      statusEl.className = 'status ok';
+    } else {
+      statusEl.textContent = 'Could not save to shared database. Check your connection and try again.';
+      statusEl.className = 'status err';
     }
     renderMainTable();
     updateCharts();
@@ -382,7 +437,7 @@
     });
   }
 
-  // ----- file parsing (same as original) -----
+  // ----- file parsing (unchanged — uploaded lead data stays local/browser-only) -----
   function parseDateCell(v){
     if (v instanceof Date) return v;
     if (typeof v === 'number') return new Date(Math.round((v - 25569) * 86400 * 1000));
@@ -428,8 +483,6 @@
       return;
     }
 
-    // set the active month/year context from THIS card's date range, before parsing
-    // anything, so upload and processing can never disagree about which month is active.
     const fromInput = document.getElementById('filterFrom');
     const toInput = document.getElementById('filterTo');
     if (!fromInput.value || !toInput.value){
@@ -446,13 +499,12 @@
     }
     filterFromDate = fromDate;
     filterToDate = toDate;
-    setMonthContext(fromDate, toDate);
+    await setMonthContext(fromDate, toDate);
     recalcWorkingDays();
 
     statusEl.textContent = 'Processing…';
     statusEl.className = 'status';
 
-    // reset
     ALL_DEALERS.forEach(d => {
       for (let day = 1; day <= 31; day++) dailyData[d][day] = { received:0, qualified:0, booked:0 };
     });
@@ -584,8 +636,6 @@
         const bookPace = expBook > 0 ? (t.booked / expBook * 100) : null;
         const enqGap = tg.enquiryTarget ? (t.qualified - expEnq) : null;
         const bookGap = tg.bookingTarget ? (t.booked - expBook) : null;
-        // "Shared Today" now reflects the filter's end date (toDay), not literal today,
-        // so it stays meaningful when viewing a past month.
         const sharedToday = dailyData[dealer][toDay] ? dailyData[dealer][toDay].qualified : 0;
 
         zoneAgg.received += t.received; zoneAgg.qualified += t.qualified; zoneAgg.booked += t.booked;
@@ -669,33 +719,24 @@
     html += '</tbody>';
     table.innerHTML = html;
 
-    // update filter info
     document.getElementById('filterInfo').textContent =
       `(showing days ${filterFrom}–${filterTo} · ${workingDaysInFilter} working days in filter)`;
   }
 
   // ----- upload card: date range & enabling -----
-  // The date range now lives on the Upload card and is the single source of truth
-  // for which month is "active". Setting it and clicking Process Files together set
-  // YEAR/MONTH (via setMonthContext, called inside processFiles) and parse the
-  // uploaded files into that month in one atomic action — no separate "apply filter"
-  // step that can be done out of order.
-  function initDateFilter(){
+  async function initDateFilter(){
     const fromInput = document.getElementById('filterFrom');
     const toInput = document.getElementById('filterTo');
     fromInput.type = 'date';
     toInput.type = 'date';
-    // default every time the dashboard is opened: 1st of current month -> today
     const firstOfThisMonth = new Date(today.getFullYear(), today.getMonth(), 1);
     fromInput.value = firstOfThisMonth.toISOString().split('T')[0];
     toInput.value = today.toISOString().split('T')[0];
     filterFromDate = firstOfThisMonth;
     filterToDate = new Date(today);
-    // set an initial context so Section 2/3 have sane values before any upload happens
-    setMonthContext(filterFromDate, filterToDate);
+    await setMonthContext(filterFromDate, filterToDate);
   }
 
-  // enable the date range + Process button only once a file has been chosen
   function updateUploadControlsEnabled(){
     const anyFile = ['fileReceived','fileShared','fileBooked']
       .some(id => document.getElementById(id).files.length > 0);
@@ -704,7 +745,7 @@
     document.getElementById('processBtn').disabled = !anyFile;
   }
 
-  function clearData(){
+  async function clearData(){
     ALL_DEALERS.forEach(d => {
       for (let day = 1; day <= 31; day++) dailyData[d][day] = { received:0, qualified:0, booked:0 };
     });
@@ -713,17 +754,17 @@
       document.getElementById(id).value = '';
     });
     updateUploadControlsEnabled();
-    initDateFilter();
+    await initDateFilter();
     recalcWorkingDays();
     renderMainTable();
     populateScopeSelect();
     updateCharts();
     const statusEl = document.getElementById('processStatus');
-    statusEl.textContent = 'Data cleared.';
+    statusEl.textContent = 'Data cleared. (This only clears uploaded lead data on this device — shared targets/holidays are untouched.)';
     statusEl.className = 'status';
   }
 
-  // ----- worm chart (unchanged logic, respects filter indirectly via totals) -----
+  // ----- worm chart -----
   function populateScopeSelect(){
     const sel = document.getElementById('scopeSelect');
     sel.innerHTML = '';
@@ -843,11 +884,14 @@
   document.getElementById('scopeSelect').addEventListener('change', updateCharts);
 
   // ----- initialization -----
-  initDateFilter();
-  loadSettings();
+  (async function init(){
+    initFirebase();
+    await initDateFilter();
+    await loadSettings();
 
-  document.getElementById('dateLine').textContent =
-    `As on ${today.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' })} — Day ${DAY} of ${totalDaysInMonth}`;
+    document.getElementById('dateLine').textContent =
+      `As on ${today.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' })} — Day ${DAY} of ${totalDaysInMonth}`;
+  })();
 </script>
 </body>
 </html>

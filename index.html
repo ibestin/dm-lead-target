@@ -724,14 +724,24 @@
   }
 
   // ----- upload card: date range & enabling -----
+  // Formats a Date using its LOCAL year/month/day (never UTC), so users in
+  // timezones ahead of UTC (e.g. IST) don't see the date roll back a day
+  // the way .toISOString() would cause.
+  function toLocalDateInputValue(d){
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+
   async function initDateFilter(){
     const fromInput = document.getElementById('filterFrom');
     const toInput = document.getElementById('filterTo');
     fromInput.type = 'date';
     toInput.type = 'date';
     const firstOfThisMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-    fromInput.value = firstOfThisMonth.toISOString().split('T')[0];
-    toInput.value = today.toISOString().split('T')[0];
+    fromInput.value = toLocalDateInputValue(firstOfThisMonth);
+    toInput.value = toLocalDateInputValue(today);
     filterFromDate = firstOfThisMonth;
     filterToDate = new Date(today);
     await setMonthContext(filterFromDate, filterToDate);

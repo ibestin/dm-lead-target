@@ -859,14 +859,33 @@
       actualCum.push(day <= DAY ? runningActual : null);
       targetCum.push(+(dailyTargetSum * cumNonSunday[day]).toFixed(1));
     }
-    return { labels, actualCum, targetCum };
+
+    // ---- projected trend: working-day run-rate carried to month end ----
+    // Anchored at today's actual, rises only on non-Sundays (same calendar
+    // logic as the target line). Stays null if there is nothing to project
+    // (no working days elapsed yet, or the period already reaches month end).
+    const lastDay = Math.min(DAY, totalDaysInMonth);
+    const elapsedWD = cumNonSunday[lastDay] || 0;
+    let projCum = null;
+    let projectedEnd = null;
+    if (elapsedWD > 0 && lastDay < totalDaysInMonth){
+      const rate = runningActual / elapsedWD;
+      projCum = labels.map(day => {
+        if (day < lastDay) return null;
+        if (day === lastDay) return runningActual;
+        return +(runningActual + rate * (cumNonSunday[day] - cumNonSunday[lastDay])).toFixed(1);
+      });
+      projectedEnd = projCum[projCum.length - 1];
+    }
+
+    return { labels, actualCum, targetCum, projCum, projectedEnd };
   }
 
   function renderWormChart(metric, canvasId, existingChart){
     const { workingDaysTotal } = recalcWorkingDays();
     const scope = document.getElementById('scopeSelect').value || 'ALL';
     const dealers = dealersForScope(scope);
-    const { labels, actualCum, targetCum } = buildSeries(metric, dealers, workingDaysTotal);
+    const { labels, actualCum, targetCum, projCum, projectedEnd } = buildSeries(metric, dealers, workingDaysTotal);
 
     const ctx = document.getElementById(canvasId).getContext('2d');
     if (existingChart) existingChart.destroy();
@@ -893,7 +912,15 @@
             pointRadius: 2,
             tension: 0.15,
           }
-        ]
+        ].concat(projCum ? [{
+          label: 'Projected (month-end: ' + Math.round(projectedEnd) + ')',
+          data: projCum,
+          borderColor: '#4c9a2a',
+          borderDash: [2,3],
+          backgroundColor: 'transparent',
+          pointRadius: 0,
+          tension: 0,
+        }] : [])
       },
       options: {
         responsive: true,

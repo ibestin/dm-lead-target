@@ -164,12 +164,12 @@
 
   // ----- fixed structure (must match the admin dashboard) -----
   const ZONES = [
-    { zone: "ZONE 1", dealers: ["KL404 - Thiruvananthapuram", "KL405 - Kollam", "KL601 - Nilamel"] },
+    { zone: "ZONE 1", dealers: ["KL404 - Thiruvananthapuram", "KL405 - Kollam", "KL601 - Nilamel", "KL703 - Kottarakkara"] },
     { zone: "ZONE 2", dealers: ["KL101 - Kodimatha", "KL304 - Thellakom", "KL509 - Thodupuzha", "KL511 - Kanjirappally"] },
-    { zone: "ZONE 3", dealers: ["KL513 - Thiruvalla", "KL309 - Kayamkulam", "KL510 - Alappuzha"] },
-    { zone: "ZONE 4", dealers: ["KL102 - Edappally", "KL302 - Desom", "KL310 - Nettoor", "KL313 - Muvattupuzha"] },
+    { zone: "ZONE 3", dealers: ["KL513 - Thiruvalla", "KL309 - Kayamkulam", "KL510 - Alappuzha", "KL701 - Pathanamthitta"] },
+    { zone: "ZONE 4", dealers: ["KL102 - Edappally", "KL302 - Desom", "KL310 - Nettoor", "KL313 - Muvattupuzha", "KL702 - Kakkanad", "KL705 - Perumbavoor"] },
     { zone: "ZONE 5", dealers: ["KL103 - Sakthan Nagar", "KL308 - Thrissur", "KL312 - Vadanappally"] },
-    { zone: "ZONE 6", dealers: ["KL311 - Palakkad"] },
+    { zone: "ZONE 6", dealers: ["KL311 - Palakkad", "KL704 - Ottappalam"] },
   ];
   const ALL_DEALERS = ZONES.flatMap(z => z.dealers);
   const DEFAULT_TARGETS = {
@@ -191,6 +191,11 @@
     "KL308 - Thrissur":           { enquiryTarget: 600,  bookingTarget: 35 },
     "KL312 - Vadanappally":       { enquiryTarget: 500,  bookingTarget: 34 },
     "KL311 - Palakkad":           { enquiryTarget: 1100, bookingTarget: 75 },
+    "KL701 - Pathanamthitta":     { enquiryTarget: 0, bookingTarget: 0 },
+    "KL702 - Kakkanad":           { enquiryTarget: 0, bookingTarget: 0 },
+    "KL703 - Kottarakkara":       { enquiryTarget: 0, bookingTarget: 0 },
+    "KL704 - Ottappalam":         { enquiryTarget: 0, bookingTarget: 0 },
+    "KL705 - Perumbavoor":        { enquiryTarget: 0, bookingTarget: 0 },
   };
 
   // ----- state (populated entirely from Firebase) -----
